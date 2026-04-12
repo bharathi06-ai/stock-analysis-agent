@@ -184,11 +184,20 @@ Use null (not "null") for any URL you cannot find. Only include real, direct .pd
             if hasattr(block, "text") and block.text:
                 full_text += block.text
 
+        # Debug: print the raw text Claude returned
+        print(f"  [claude] Raw response:\n{full_text}\n  [/raw]")
+
         # Parse JSON from response
         json_match = re.search(r"\{[\s\S]*\}", full_text)
         if json_match:
             data = json.loads(json_match.group())
-            print(f"  [claude] Response received, parsing URLs...")
+            print(f"  [claude] Parsed URLs:")
+            for k, v in data.items():
+                if k == "quarterly":
+                    for q in v:
+                        print(f"    {q.get('period')}: {q.get('url')}")
+                else:
+                    print(f"    {k}: {v}")
             _save_url_cache(company, data)
             return data
 
