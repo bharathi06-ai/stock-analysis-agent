@@ -16,6 +16,7 @@ balance sheet, cash flow, EPS, DPS, margins, ROE …) is taken from yfinance.
 
 import json
 import os
+import random
 import re
 import time as _time_mod
 
@@ -28,15 +29,33 @@ from pdf_fetcher import get_company_reports, ticker_to_name
 
 load_dotenv()
 
-# ── yfinance session (browser User-Agent to avoid 429s) ──────────────────────
+# ── yfinance session — rotated User-Agent + realistic browser headers ─────────
+_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0",
+]
+
 _yf_session = requests.Session()
 _yf_session.headers.update({
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    )
+    "User-Agent":      random.choice(_USER_AGENTS),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "DNT":             "1",
+    "Connection":      "keep-alive",
 })
+
+
+def _yf_sleep() -> None:
+    """Random 3–7 s pause between yfinance calls to mimic human browsing."""
+    delay = random.uniform(3.0, 7.0)
+    print(f"  [yfinance] sleeping {delay:.1f}s…")
+    _time_mod.sleep(delay)
+
+
+def _rotate_ua() -> None:
+    """Pick a fresh random User-Agent for the shared session."""
+    _yf_session.headers["User-Agent"] = random.choice(_USER_AGENTS)
 
 # ── In-memory ticker cache (5-minute TTL) ────────────────────────────────────
 _mem_cache: dict = {}   # {ticker: {"ts": float, "data": dict}}
@@ -254,7 +273,7 @@ def get_price_data(ticker: str) -> dict:
             currency = "SEK"   # price and market_cap are now both in SEK
 
         # ── .info: company meta + beta only (no financials) ──
-        _time_mod.sleep(1)
+        _rotate_ua(); _yf_sleep()
         info = {}
         try:
             info = _yf_retry(lambda: stock.info, retries=2, base_wait=2) or {}
@@ -262,14 +281,14 @@ def get_price_data(ticker: str) -> dict:
             print(f"  [yfinance] .info unavailable ({e}), using fast_info only")
 
         # ── 1-year price history for chart ──
-        _time_mod.sleep(1)
+        _rotate_ua(); _yf_sleep()
         hist = _yf_retry(lambda: stock.history(period="1y"))
         chart_labels  = [d.strftime("%Y-%m-%d") for d in hist.index]
         chart_prices  = [_r(p, 2) for p in hist["Close"].tolist()]
         chart_volumes = [int(v) for v in hist["Volume"].tolist()]
 
         # ── Institutional holders ──
-        _time_mod.sleep(1)
+        _rotate_ua(); _yf_sleep()
         investors = []
         try:
             ih = _yf_retry(lambda: stock.institutional_holders, retries=2, base_wait=2)
