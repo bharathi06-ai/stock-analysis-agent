@@ -44,7 +44,15 @@
 <div id="status-bar" class="status-bar hidden">
   <div class="status-inner">
     <span id="status-icon" class="status-icon">⏳</span>
-    <span id="status-text">Analysing…</span>
+    <div class="status-body">
+      <div class="status-row">
+        <span id="status-text">Analysing…</span>
+        <span id="status-step" class="status-step"></span>
+      </div>
+      <div id="status-track" class="status-track hidden">
+        <div id="status-fill" class="status-fill"></div>
+      </div>
+    </div>
   </div>
 </div>
 

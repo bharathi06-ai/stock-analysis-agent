@@ -1,6 +1,9 @@
+import json
 import os
+import queue
 import re
-from flask import Flask, render_template, request, jsonify
+import threading
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -253,16 +256,47 @@ def analyse():
     if not TICKER_RE.match(ticker):
         return jsonify({"error": "Invalid ticker format"}), 400
 
-    # Lazy import so Flask starts fast even if libraries take a moment
-    from agent import analyse_stock
+    # Use a queue so the background thread can push progress events and the
+    # final result to the SSE generator without blocking either side.
+    q = queue.Queue()
 
-    try:
-        result = analyse_stock(ticker)
-        if "error" in result:
-            return jsonify(result), 422
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    def run():
+        from agent import analyse_stock
+
+        def on_progress(message, step, total):
+            q.put({"type": "progress", "message": message,
+                   "step": step, "total": total})
+
+        try:
+            result = analyse_stock(ticker, progress_callback=on_progress)
+            if "error" in result:
+                q.put({"type": "error", "message": result["error"]})
+            else:
+                q.put({"type": "done", "result": result})
+        except Exception as exc:
+            q.put({"type": "error", "message": str(exc)})
+
+    threading.Thread(target=run, daemon=True).start()
+
+    def generate():
+        while True:
+            try:
+                event = q.get(timeout=180)   # 3-minute hard cap per step
+            except queue.Empty:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Analysis timed out after 3 minutes'})}\n\n"
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+            if event["type"] in ("done", "error"):
+                break
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # tell nginx / Render not to buffer
+        },
+    )
 
 
 if __name__ == "__main__":

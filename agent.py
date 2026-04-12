@@ -237,7 +237,7 @@ def compute_ratios(price_data: dict, pdf_financials: dict) -> dict:
 #  Main orchestrator
 # ══════════════════════════════════════════════════════════════════════════════
 
-def analyse_stock(ticker: str) -> dict:
+def analyse_stock(ticker: str, progress_callback=None) -> dict:
     """
     Full stock analysis pipeline.
 
@@ -245,13 +245,23 @@ def analyse_stock(ticker: str) -> dict:
     All financial tables (P&L, BS, CF, Quarters, Ratios) are sourced from
     the company's own published PDF reports. Only price, chart and holders
     come from yfinance.
+
+    progress_callback(message, step, total) is called before each long step
+    so the caller can stream progress to the UI.
     """
+    TOTAL_STEPS = 6
+
+    def _emit(msg: str, step: int):
+        print(f"\n[{step}/{TOTAL_STEPS}] {msg}")
+        if progress_callback:
+            progress_callback(msg, step, TOTAL_STEPS)
+
     print(f"\n{'='*60}")
     print(f"StockGPT for Siva — analysing: {ticker}")
     print(f"{'='*60}")
 
     # ── 1. Live price + chart (yfinance) ─────────────────────────────────────
-    print("\n[1/6] Fetching live price data…")
+    _emit("Fetching live price data…", 1)
     price_data = get_price_data(ticker)
     if not price_data.get("success"):
         return {"error": f"Could not fetch price data: {price_data.get('error')}"}
@@ -261,7 +271,7 @@ def analyse_stock(ticker: str) -> dict:
     print(f"      → {company_name}, {price_data['market']['price']} {price_data['market']['currency']}")
 
     # ── 2. Download PDF reports ───────────────────────────────────────────────
-    print("\n[2/6] Downloading PDF reports…")
+    _emit(f"Downloading annual & quarterly reports for {company_name}…", 2)
     reports = fetch_reports(ticker)
     annual_text      = (reports.get("annual") or {}).get("text", "")
     quarterly_reports = reports.get("quarterly", [])
@@ -269,7 +279,7 @@ def analyse_stock(ticker: str) -> dict:
           f"quarterly: {len(quarterly_reports)} reports")
 
     # ── 3. Extract structured financials from PDFs ────────────────────────────
-    print("\n[3/6] Extracting financial data from PDFs…")
+    _emit("Extracting financials from PDF reports…", 3)
     pdf_financials = extract_financials_from_reports(
         company=company_name,
         annual_text=annual_text,
@@ -278,17 +288,17 @@ def analyse_stock(ticker: str) -> dict:
     )
 
     # ── 4. Search recent news ──────────────────────────────────────────────
-    print("\n[4/6] Searching for recent news…")
+    _emit("Searching for recent news…", 4)
     news = search_news(company_name, ticker)
     print(f"      → {len(news)} news items")
 
     # ── 5. Find peer companies ────────────────────────────────────────────────
-    print("\n[5/6] Finding peer companies…")
+    _emit("Finding peer companies…", 5)
     peers = find_peers(company_name, sector, ticker)
     print(f"      → {len(peers)} peers")
 
     # ── 6. Generate investment analysis ───────────────────────────────────────
-    print("\n[6/6] Generating investment analysis…")
+    _emit("Generating AI investment analysis…", 6)
     analysis_output = generate_analysis(
         company_name=company_name,
         ticker=ticker,

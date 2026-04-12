@@ -204,8 +204,22 @@ function showStatus(msg, isError = false) {
   const bar = document.getElementById("status-bar");
   document.getElementById("status-text").textContent = msg;
   document.getElementById("status-icon").textContent = isError ? "✖" : "⏳";
+  document.getElementById("status-step").textContent = "";
+  document.getElementById("status-track").classList.add("hidden");
   bar.classList.remove("hidden", "error-bar");
   if (isError) bar.classList.add("error-bar");
+}
+
+// Step-aware progress — shows "Step N of M" + animated fill bar
+function showProgress(msg, step, total) {
+  document.getElementById("status-text").textContent = msg;
+  document.getElementById("status-icon").textContent = "⏳";
+  document.getElementById("status-step").textContent = `${step} of ${total}`;
+  document.getElementById("status-fill").style.width =
+    Math.round((step / total) * 100) + "%";
+  document.getElementById("status-track").classList.remove("hidden");
+  const bar = document.getElementById("status-bar");
+  bar.classList.remove("hidden", "error-bar");
 }
 
 function hideStatus() {
@@ -266,31 +280,62 @@ async function runAnalysis() {
 
   const btn = document.getElementById("analyse-btn");
   btn.disabled = true;
-  showStatus(`Fetching data for ${ticker} … this takes 20–40 seconds`);
+  showStatus(`Starting analysis for ${ticker}…`);
   document.getElementById("dashboard").classList.add("hidden");
 
   try {
     const resp = await fetch("/api/analyse", {
-      method: "POST",
+      method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ticker }),
+      body:    JSON.stringify({ ticker }),
     });
-    const data = await resp.json();
 
-    if (!resp.ok || data.error) {
-      showStatus(data.error || "Analysis failed", true);
+    // Validation errors come back as plain JSON before streaming starts
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      showStatus(err.error || "Analysis failed", true);
       return;
     }
 
-    hideStatus();
-    renderDashboard(data);
-    document.getElementById("dashboard").classList.remove("hidden");
+    // Read the SSE stream chunk by chunk
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
 
-    // Switch to Overview tab
-    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-    document.querySelector('.tab-btn[data-tab="overview"]').classList.add("active");
-    document.getElementById("tab-overview").classList.add("active");
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buf += decoder.decode(value, { stream: true });
+
+      // SSE events are separated by double newlines
+      const parts = buf.split("\n\n");
+      buf = parts.pop();   // keep any incomplete trailing chunk
+
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data:")) continue;
+        let evt;
+        try { evt = JSON.parse(line.slice(5).trim()); }
+        catch { continue; }
+
+        if (evt.type === "progress") {
+          showProgress(evt.message, evt.step, evt.total);
+
+        } else if (evt.type === "done") {
+          hideStatus();
+          renderDashboard(evt.result);
+          document.getElementById("dashboard").classList.remove("hidden");
+          document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+          document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+          document.querySelector('.tab-btn[data-tab="overview"]').classList.add("active");
+          document.getElementById("tab-overview").classList.add("active");
+
+        } else if (evt.type === "error") {
+          showStatus(evt.message || "Analysis failed", true);
+        }
+      }
+    }
 
   } catch (err) {
     showStatus("Network error: " + err.message, true);
