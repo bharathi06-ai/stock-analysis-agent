@@ -894,6 +894,28 @@ function makeTable(headers, rows) {
 }
 
 // ════════════════════════════════════════════════════════
+//  WELCOME MODAL
+// ════════════════════════════════════════════════════════
+
+function closeWelcome() {
+  document.getElementById("welcome-overlay").classList.add("hidden");
+  sessionStorage.setItem("welcomeSeen", "1");
+}
+
+function closeWelcomeOnOverlay(e) {
+  if (e.target === document.getElementById("welcome-overlay")) closeWelcome();
+}
+
+// Show once per browser session
+(function () {
+  if (!sessionStorage.getItem("welcomeSeen")) {
+    document.getElementById("welcome-overlay").classList.remove("hidden");
+  }
+})();
+
+// Also close welcome on Escape (merged below with feedback Escape handler)
+
+// ════════════════════════════════════════════════════════
 //  FEEDBACK MODAL
 // ════════════════════════════════════════════════════════
 
@@ -917,9 +939,12 @@ function closeFeedbackOnOverlay(e) {
   if (e.target === document.getElementById("feedback-overlay")) closeFeedback();
 }
 
-// Close on Escape key
+// Close on Escape key (both modals)
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape") closeFeedback();
+  if (e.key === "Escape") {
+    closeFeedback();
+    closeWelcome();
+  }
 });
 
 // Submit via fetch — no page reload
