@@ -20,12 +20,39 @@ import re
 import time as _time_mod
 
 import anthropic
+import requests
 import yfinance as yf
 from dotenv import load_dotenv
 
 from pdf_fetcher import get_company_reports, ticker_to_name
 
 load_dotenv()
+
+# ── yfinance session (browser User-Agent to avoid 429s) ──────────────────────
+_yf_session = requests.Session()
+_yf_session.headers.update({
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
+})
+
+# ── In-memory ticker cache (5-minute TTL) ────────────────────────────────────
+_mem_cache: dict = {}   # {ticker: {"ts": float, "data": dict}}
+_MEM_TTL = 300          # seconds
+
+
+def _mem_get(ticker: str) -> dict | None:
+    entry = _mem_cache.get(ticker)
+    if entry and (_time_mod.time() - entry["ts"]) < _MEM_TTL:
+        print(f"  [mem-cache] Hit for {ticker}")
+        return entry["data"]
+    return None
+
+
+def _mem_set(ticker: str, data: dict) -> None:
+    _mem_cache[ticker] = {"ts": _time_mod.time(), "data": data}
 
 
 # ── Generic helpers ───────────────────────────────────────────────────────────
@@ -131,18 +158,24 @@ def _extract_cache(ticker: str) -> str:
     return os.path.join(_CACHE_DIR, f"{_safe_ticker(ticker)}_extract.json")
 
 
-# ── yfinance retry ────────────────────────────────────────────────────────────
+# ── yfinance retry (exponential backoff: 2s → 4s → 8s) ──────────────────────
 
-def _yf_retry(fn, retries=3, base_wait=10):
+def _yf_retry(fn, retries=3, base_wait=2):
     for attempt in range(retries):
         try:
             return fn()
         except Exception as e:
             err = str(e)
-            if "Too Many Requests" in err or "429" in err or "Rate" in err:
-                wait = base_wait * (attempt + 1)
-                print(f"  [yfinance] Rate limited, waiting {wait}s (attempt {attempt+1})…")
+            is_rate_limit = (
+                "Too Many Requests" in err or "429" in err or "Rate" in err
+            )
+            if is_rate_limit or attempt < retries - 1:
+                wait = base_wait * (2 ** attempt)   # 2s, 4s, 8s
+                print(f"  [yfinance] {'Rate limited' if is_rate_limit else 'Error'}, "
+                      f"waiting {wait}s (attempt {attempt+1}/{retries})…")
                 _time_mod.sleep(wait)
+                if not is_rate_limit:
+                    raise   # re-raise non-rate-limit errors after logging
             else:
                 raise
     raise RuntimeError("yfinance rate limited after all retries")
@@ -162,13 +195,19 @@ def get_price_data(ticker: str) -> dict:
     beta, institutional holders, and basic company meta (name/sector/description).
     Financial statements and ratios are NOT fetched here — those come from PDFs.
     """
+    # In-memory cache check (5-minute TTL — avoids repeated yfinance calls)
+    mem = _mem_get(ticker)
+    if mem:
+        return mem
+
     cached = _load_cache(_price_cache(ticker), ttl_hours=8)
     if cached:
+        _mem_set(ticker, cached)
         return cached
 
     print(f"  [yfinance] Fetching price data for {ticker}…")
     try:
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(ticker, session=_yf_session)
 
         # ── fast_info: lightweight, rarely rate-limited ──
         fi = _yf_retry(lambda: stock.fast_info)
@@ -201,7 +240,7 @@ def get_price_data(ticker: str) -> dict:
                 # Fallback: live EUR/SEK rate (or hardcoded default)
                 eur_sek = 10.86
                 try:
-                    fx = yf.Ticker("EURSEK=X")
+                    fx = yf.Ticker("EURSEK=X", session=_yf_session)
                     rate = getattr(fx.fast_info, "last_price", None)
                     if rate and 8.0 < float(rate) < 16.0:
                         eur_sek = float(rate)
@@ -215,22 +254,25 @@ def get_price_data(ticker: str) -> dict:
             currency = "SEK"   # price and market_cap are now both in SEK
 
         # ── .info: company meta + beta only (no financials) ──
+        _time_mod.sleep(1)
         info = {}
         try:
-            info = _yf_retry(lambda: stock.info, retries=2, base_wait=5) or {}
+            info = _yf_retry(lambda: stock.info, retries=2, base_wait=2) or {}
         except Exception as e:
             print(f"  [yfinance] .info unavailable ({e}), using fast_info only")
 
         # ── 1-year price history for chart ──
+        _time_mod.sleep(1)
         hist = _yf_retry(lambda: stock.history(period="1y"))
         chart_labels  = [d.strftime("%Y-%m-%d") for d in hist.index]
         chart_prices  = [_r(p, 2) for p in hist["Close"].tolist()]
         chart_volumes = [int(v) for v in hist["Volume"].tolist()]
 
         # ── Institutional holders ──
+        _time_mod.sleep(1)
         investors = []
         try:
-            ih = _yf_retry(lambda: stock.institutional_holders, retries=2, base_wait=5)
+            ih = _yf_retry(lambda: stock.institutional_holders, retries=2, base_wait=2)
             if ih is not None and not ih.empty:
                 for _, row in ih.head(10).iterrows():
                     pct_val = row.get("% Out", row.get("pctHeld", None))
@@ -279,6 +321,7 @@ def get_price_data(ticker: str) -> dict:
               f"market_cap={_m(mc)} MSEK, "
               f"chart={len(chart_labels)} pts")
         _save_cache(_price_cache(ticker), result)
+        _mem_set(ticker, result)
         return result
 
     except Exception as e:
