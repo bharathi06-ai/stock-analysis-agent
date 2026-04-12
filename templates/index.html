@@ -81,22 +81,24 @@
 
   <!-- Tab bar -->
   <nav class="tab-bar">
-    <button class="tab-btn active" data-tab="overview">Overview</button>
-    <button class="tab-btn" data-tab="price">Price Chart</button>
-    <button class="tab-btn" data-tab="pl">Profit &amp; Loss</button>
+    <button class="tab-btn active" data-tab="summary">Summary</button>
+    <button class="tab-btn" data-tab="income">Income Statement</button>
     <button class="tab-btn" data-tab="bs">Balance Sheet</button>
     <button class="tab-btn" data-tab="cf">Cash Flow</button>
-    <button class="tab-btn" data-tab="quarters">Quarterly</button>
-    <button class="tab-btn" data-tab="ratios">Ratios</button>
-    <button class="tab-btn" data-tab="shareholders">Shareholders</button>
+    <button class="tab-btn" data-tab="ratios">Ratios &amp; Key Figures</button>
+    <button class="tab-btn" data-tab="yoy">YoY Analysis</button>
+    <button class="tab-btn" data-tab="qoq">QoQ Analysis</button>
+    <button class="tab-btn" data-tab="price">Price Chart</button>
     <button class="tab-btn" data-tab="analysis">AI Analysis</button>
+    <button class="tab-btn" data-tab="peers">Peers</button>
+    <button class="tab-btn" data-tab="shareholders">Shareholders</button>
   </nav>
 
   <!-- Tab panels -->
   <div class="tab-panels">
 
-    <!-- 1. OVERVIEW -->
-    <section id="tab-overview" class="tab-panel active">
+    <!-- 1. SUMMARY -->
+    <section id="tab-summary" class="tab-panel active">
       <div class="two-col">
         <div>
           <h3 class="section-heading">About the Company</h3>
@@ -114,7 +116,47 @@
       </div>
     </section>
 
-    <!-- 2. PRICE CHART -->
+    <!-- 2. INCOME STATEMENT -->
+    <section id="tab-income" class="tab-panel">
+      <h3 class="section-heading">Income Statement</h3>
+      <div id="income-source-chip" class="tab-source-chip"></div>
+      <div id="income-table-wrap"></div>
+    </section>
+
+    <!-- 3. BALANCE SHEET -->
+    <section id="tab-bs" class="tab-panel">
+      <h3 class="section-heading">Balance Sheet</h3>
+      <div id="bs-source-chip" class="tab-source-chip"></div>
+      <div id="bs-table-wrap"></div>
+    </section>
+
+    <!-- 4. CASH FLOW -->
+    <section id="tab-cf" class="tab-panel">
+      <h3 class="section-heading">Cash Flow Statement</h3>
+      <div id="cf-source-chip" class="tab-source-chip"></div>
+      <div id="cf-table-wrap"></div>
+    </section>
+
+    <!-- 5. RATIOS & KEY FIGURES -->
+    <section id="tab-ratios" class="tab-panel">
+      <h3 class="section-heading">Ratios &amp; Key Figures</h3>
+      <div id="ratios-wrap" class="ratios-two-col"></div>
+    </section>
+
+    <!-- 6. YOY ANALYSIS -->
+    <section id="tab-yoy" class="tab-panel">
+      <h3 class="section-heading">Year-on-Year Analysis</h3>
+      <div id="yoy-table-wrap"></div>
+    </section>
+
+    <!-- 7. QOQ ANALYSIS -->
+    <section id="tab-qoq" class="tab-panel">
+      <h3 class="section-heading">Quarter-on-Quarter Analysis</h3>
+      <div id="qoq-source-chip" class="tab-source-chip"></div>
+      <div id="qoq-table-wrap"></div>
+    </section>
+
+    <!-- 8. PRICE CHART -->
     <section id="tab-price" class="tab-panel">
       <div class="chart-header-row">
         <h3 class="section-heading">Price History</h3>
@@ -137,57 +179,22 @@
       </div>
     </section>
 
-    <!-- 3. PROFIT & LOSS -->
-    <section id="tab-pl" class="tab-panel">
-      <h3 class="section-heading">Annual Profit &amp; Loss (MSEK)</h3>
-      <div id="pl-source-chip" class="tab-source-chip"></div>
-      <div class="chart-wrap">
-        <canvas id="chart-pl"></canvas>
-      </div>
-      <div id="pl-table-wrap" class="table-wrap" style="margin-top:24px"></div>
+    <!-- 9. AI ANALYSIS -->
+    <section id="tab-analysis" class="tab-panel">
+      <h3 class="section-heading">AI Equity Analysis</h3>
+      <div id="analysis-source-chip" class="tab-source-chip"></div>
+      <div id="analysis-text" class="analysis-text"></div>
+      <h3 class="section-heading" style="margin-top:32px">Recent News</h3>
+      <div id="news-list" class="news-list"></div>
     </section>
 
-    <!-- 4. BALANCE SHEET -->
-    <section id="tab-bs" class="tab-panel">
-      <h3 class="section-heading">Balance Sheet (MSEK)</h3>
-      <div id="bs-source-chip" class="tab-source-chip"></div>
-      <div class="chart-wrap">
-        <canvas id="chart-bs"></canvas>
-      </div>
-      <div id="bs-table-wrap" class="table-wrap" style="margin-top:24px"></div>
+    <!-- 10. PEERS -->
+    <section id="tab-peers" class="tab-panel">
+      <h3 class="section-heading">Peer Comparison</h3>
+      <div id="peers-table-wrap"></div>
     </section>
 
-    <!-- 5. CASH FLOW -->
-    <section id="tab-cf" class="tab-panel">
-      <h3 class="section-heading">Cash Flow (MSEK)</h3>
-      <div id="cf-source-chip" class="tab-source-chip"></div>
-      <div class="chart-wrap">
-        <canvas id="chart-cf"></canvas>
-      </div>
-      <div id="cf-table-wrap" class="table-wrap" style="margin-top:24px"></div>
-    </section>
-
-    <!-- 6. QUARTERLY -->
-    <section id="tab-quarters" class="tab-panel">
-      <h3 class="section-heading">Quarterly Revenue &amp; Net Income (MSEK)</h3>
-      <div id="q-source-chip" class="tab-source-chip"></div>
-      <div class="chart-wrap">
-        <canvas id="chart-quarters"></canvas>
-      </div>
-      <div id="q-table-wrap" class="table-wrap" style="margin-top:24px"></div>
-    </section>
-
-    <!-- 7. RATIOS -->
-    <section id="tab-ratios" class="tab-panel">
-      <h3 class="section-heading">Valuation Ratios</h3>
-      <div id="ratios-val" class="ratio-grid"></div>
-      <h3 class="section-heading" style="margin-top:28px">Profitability &amp; Quality</h3>
-      <div id="ratios-prof" class="ratio-grid"></div>
-      <h3 class="section-heading" style="margin-top:28px">Leverage &amp; Dividends</h3>
-      <div id="ratios-lev" class="ratio-grid"></div>
-    </section>
-
-    <!-- 8. SHAREHOLDERS -->
+    <!-- 11. SHAREHOLDERS -->
     <section id="tab-shareholders" class="tab-panel">
       <div class="two-col">
         <div>
@@ -199,23 +206,6 @@
           <div class="chart-wrap donut-wrap">
             <canvas id="chart-shareholders"></canvas>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 9. AI ANALYSIS -->
-    <section id="tab-analysis" class="tab-panel">
-      <div class="analysis-grid">
-        <div class="analysis-main">
-          <h3 class="section-heading">AI Equity Analysis</h3>
-          <div id="analysis-source-chip" class="tab-source-chip"></div>
-          <div id="analysis-text" class="analysis-text"></div>
-        </div>
-        <div class="analysis-side">
-          <h3 class="section-heading">Peer Companies</h3>
-          <div id="peers-list" class="peers-list"></div>
-          <h3 class="section-heading" style="margin-top:24px">Recent News</h3>
-          <div id="news-list" class="news-list"></div>
         </div>
       </div>
     </section>

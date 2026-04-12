@@ -259,8 +259,8 @@ async function loadDemo() {
     document.getElementById("dashboard").classList.remove("hidden");
     document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
     document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-    document.querySelector('.tab-btn[data-tab="overview"]').classList.add("active");
-    document.getElementById("tab-overview").classList.add("active");
+    document.querySelector('.tab-btn[data-tab="summary"]').classList.add("active");
+    document.getElementById("tab-summary").classList.add("active");
   } catch (err) {
     showStatus("Demo load failed: " + err.message, true);
   } finally {
@@ -328,8 +328,8 @@ async function runAnalysis() {
           document.getElementById("dashboard").classList.remove("hidden");
           document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
           document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-          document.querySelector('.tab-btn[data-tab="overview"]').classList.add("active");
-          document.getElementById("tab-overview").classList.add("active");
+          document.querySelector('.tab-btn[data-tab="summary"]').classList.add("active");
+          document.getElementById("tab-summary").classList.add("active");
 
         } else if (evt.type === "error") {
           showStatus(evt.message || "Analysis failed", true);
@@ -345,20 +345,126 @@ async function runAnalysis() {
 }
 
 // ════════════════════════════════════════════════════════
+//  FINANCIAL TABLE HELPERS
+// ════════════════════════════════════════════════════════
+
+const EUR_SEK = 11.5;
+function toE(msek) { return msek == null ? null : msek / EUR_SEK; }
+function fmtE(v)   { return v == null ? "—" : fmt(v, 0); }
+
+function yoyPct(curr, prev) {
+  if (curr == null || prev == null || prev === 0) return null;
+  return ((curr - prev) / Math.abs(prev)) * 100;
+}
+
+function cagrPct(latest, oldest, n) {
+  if (latest == null || oldest == null || oldest <= 0 || n <= 0) return null;
+  return (Math.pow(latest / oldest, 1 / n) - 1) * 100;
+}
+
+function trendArrow(curr, prev, lowerIsBetter = false) {
+  if (curr == null || prev == null) return { sym: "►", cls: "trend-flat" };
+  const diff = Math.abs(prev) > 0 ? (curr - prev) / Math.abs(prev) : 0;
+  if (Math.abs(diff) < 0.005) return { sym: "►", cls: "trend-flat" };
+  const up   = curr > prev;
+  const good = lowerIsBetter ? !up : up;
+  return { sym: up ? "▲" : "▼", cls: good ? "trend-up" : "trend-down" };
+}
+
+function deltaYoYCell(curr, prev, lb = false) {
+  const yoy = yoyPct(curr, prev);
+  if (yoy == null) return '<td class="delta-neu">—</td>';
+  const good = lb ? yoy <= 0 : yoy >= 0;
+  return `<td class="${good ? 'delta-pos' : 'delta-neg'}">${yoy >= 0 ? "+" : ""}${fmt(yoy, 1)}%</td>`;
+}
+
+function deltaAbsCell(curr, prev, lb = false) {
+  if (curr == null || prev == null) return '<td class="delta-neu">—</td>';
+  const d    = curr - prev;
+  const good = lb ? d <= 0 : d >= 0;
+  return `<td class="${good ? 'delta-pos' : 'delta-neg'}">${d >= 0 ? "+" : ""}${fmt(d, 0)}</td>`;
+}
+
+/**
+ * Build a Nordic-bank-style financial statement table.
+ * rows: [{type:'section'|'sub'|'total'|'major', label, vals:[], lowerIsBetter}]
+ * years: [2020, 2021, ...]
+ * opts: { showDelta, showYoY, showCagr }
+ */
+function buildFinTable(rows, years, { showDelta = false, showYoY = true, showCagr = false } = {}) {
+  if (!years.length) return '<p class="empty-state">No data available.</p>';
+  const extra = +showDelta + +showYoY + +showCagr;
+  const total = 1 + years.length + extra;
+
+  let h = '<div class="fin-table-wrap"><table class="fin-table"><thead><tr>';
+  h += '<th>EURm</th>';
+  years.forEach(y => { h += `<th>${y}</th>`; });
+  if (showDelta) h += '<th>Δ EURm</th>';
+  if (showYoY)   h += '<th>YoY %</th>';
+  if (showCagr)  h += '<th>5Y CAGR</th>';
+  h += '</tr></thead><tbody>';
+
+  for (const row of rows) {
+    if (row.type === 'section') {
+      h += `<tr class="fin-section-header"><td colspan="${total}">${row.label}</td></tr>`;
+      continue;
+    }
+    const cls  = row.type === 'major' ? 'fin-major'
+               : row.type === 'total' ? 'fin-total' : 'fin-sub';
+    const lb   = !!row.lowerIsBetter;
+    const vals = row.vals || Array(years.length).fill(null);
+    const last = vals[vals.length - 1];
+    const prev = vals.length > 1 ? vals[vals.length - 2] : null;
+    const first= vals[0];
+
+    h += `<tr class="${cls}"><td>${row.label}</td>`;
+    vals.forEach(v => { h += `<td>${fmtE(v)}</td>`; });
+    if (showDelta) h += deltaAbsCell(last, prev, lb);
+    if (showYoY)   h += deltaYoYCell(last, prev, lb);
+    if (showCagr) {
+      const cv = cagrPct(last, first, years.length - 1);
+      if (cv != null) {
+        const good = lb ? cv <= 0 : cv >= 0;
+        h += `<td class="cagr-col ${good ? 'delta-pos' : 'delta-neg'}">${cv >= 0 ? "+" : ""}${fmt(cv, 1)}%</td>`;
+      } else h += '<td class="delta-neu">—</td>';
+    }
+    h += '</tr>';
+  }
+  h += '</tbody></table></div>';
+  return h;
+}
+
+function ratioSection(title, rows) {
+  let h = `<div class="ratio-section"><div class="ratio-section-title">${title}</div>`;
+  h += '<table class="ratio-table"><tbody>';
+  for (const [label, value, fmtFn, tr] of rows) {
+    const fmted = value != null ? (fmtFn ? fmtFn(value) : String(value)) : "—";
+    const arrow = tr || { sym: "►", cls: "trend-flat" };
+    h += `<tr><td class="ratio-label">${label}</td>`;
+    h += `<td class="ratio-val">${fmted}</td>`;
+    h += `<td class="ratio-trend"><span class="${arrow.cls}">${arrow.sym}</span></td></tr>`;
+  }
+  h += '</tbody></table></div>';
+  return h;
+}
+
+// ════════════════════════════════════════════════════════
 //  RENDER DASHBOARD
 // ════════════════════════════════════════════════════════
 function renderDashboard(d) {
   renderHero(d);
   renderMetricPills(d);
-  renderOverview(d);
+  renderSummary(d);
+  renderIncomeStatement(d);
+  renderBalanceSheet(d);
+  renderCashFlow(d);
+  renderRatiosAndKeyFigures(d);
+  renderYoY(d);
+  renderQoQ(d);
   renderPriceChart(d);
-  renderPLChart(d);
-  renderBSChart(d);
-  renderCFChart(d);
-  renderQuartersChart(d);
-  renderRatios(d);
-  renderShareholders(d);
   renderAnalysis(d);
+  renderPeers(d);
+  renderShareholders(d);
   renderSourceChips(d);
   document.getElementById("last-updated").textContent =
     "Last updated: " + (d.last_updated || "—");
@@ -369,10 +475,10 @@ function renderSourceChips(d) {
   const src = d.data_sources || {};
   const map = {
     "price-source-chip":    { icon: "📈", text: src.price_chart },
-    "pl-source-chip":       { icon: "📄", text: src.financials },
+    "income-source-chip":   { icon: "📄", text: src.financials },
     "bs-source-chip":       { icon: "📄", text: src.financials },
     "cf-source-chip":       { icon: "📄", text: src.financials },
-    "q-source-chip":        { icon: "📄", text: src.quarters },
+    "qoq-source-chip":      { icon: "📄", text: src.quarters },
     "analysis-source-chip": { icon: "🤖", text: src.analysis },
   };
   Object.entries(map).forEach(([id, { icon, text }]) => {
@@ -447,8 +553,8 @@ function renderMetricPills(d) {
   });
 }
 
-// ── OVERVIEW TAB ──────────────────────────────────────
-function renderOverview(d) {
+// ── SUMMARY TAB ───────────────────────────────────────
+function renderSummary(d) {
   const co  = d.company || {};
   const rec = d.recommendation || {};
 
@@ -600,167 +706,240 @@ function drawPriceChart(range) {
   });
 }
 
-// ── P&L CHART ────────────────────────────────────────
-function renderPLChart(d) {
-  const pl = (d.profit_loss || []).slice().reverse();
-  if (!pl.length) return;
+// ── INCOME STATEMENT TAB ─────────────────────────────
+function renderIncomeStatement(d) {
+  const pl   = (d.profit_loss || []).sort((a, b) => a.year - b.year).slice(-5);
+  const wrap = document.getElementById("income-table-wrap");
+  if (!pl.length) { wrap.innerHTML = '<p class="empty-state">No income statement data available.</p>'; return; }
 
-  const labels = pl.map(r => String(r.year));
-  mkChart("chart-pl", {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [
-        { label: "Revenue",          data: pl.map(r => r.revenue),          backgroundColor: C.blue,   borderRadius: 4 },
-        { label: "Gross Profit",     data: pl.map(r => r.gross_profit),     backgroundColor: C.teal,   borderRadius: 4 },
-        { label: "Operating Income", data: pl.map(r => r.operating_income), backgroundColor: C.purple, borderRadius: 4 },
-        { label: "Net Income",       data: pl.map(r => r.net_income),       backgroundColor: C.green,  borderRadius: 4 },
-      ],
-    },
-    options: barOpts(),
-  });
+  const years = pl.map(r => r.year);
+  const g = key => pl.map(r => toE(r[key] ?? null));
 
-  document.getElementById("pl-table-wrap").innerHTML = makeTable(
-    ["Year", "Revenue", "Gross Profit", "Op. Income", "Net Income", "EBITDA"],
-    pl.map(r => [r.year, fmtM(r.revenue), fmtM(r.gross_profit),
-                 fmtM(r.operating_income), fmtM(r.net_income), fmtM(r.ebitda)])
+  // Derived rows: total expenses = revenue − op_income; tax = op_income − net_income
+  const expVals = pl.map(r =>
+    r.revenue != null && r.operating_income != null ? toE(r.revenue - r.operating_income) : null
   );
+  const taxVals = pl.map(r =>
+    r.operating_income != null && r.net_income != null ? toE(r.operating_income - r.net_income) : null
+  );
+
+  const rows = [
+    { type: 'section', label: 'INCOME' },
+    { type: 'sub',   label: 'Net interest income',           vals: g('nii') },
+    { type: 'sub',   label: 'Net fee & commission income',   vals: g('fee_income') },
+    { type: 'sub',   label: 'Net insurance result',          vals: g('insurance_result') },
+    { type: 'sub',   label: 'Fair value result',             vals: g('fair_value') },
+    { type: 'sub',   label: 'Other income',                  vals: g('other_income') },
+    { type: 'total', label: 'Total Operating Income',        vals: g('revenue') },
+
+    { type: 'section', label: 'EXPENSES' },
+    { type: 'sub',   label: 'Staff costs',                   vals: g('staff_costs'),    lowerIsBetter: true },
+    { type: 'sub',   label: 'Other expenses',                vals: g('other_expenses'), lowerIsBetter: true },
+    { type: 'sub',   label: 'Regulatory fees',               vals: g('reg_fees'),       lowerIsBetter: true },
+    { type: 'sub',   label: 'Depreciation & Amortisation',   vals: g('da'),             lowerIsBetter: true },
+    { type: 'total', label: 'Total Expenses',                vals: expVals,             lowerIsBetter: true },
+
+    { type: 'major', label: 'Operating Profit',              vals: g('operating_income') },
+    { type: 'sub',   label: 'Tax',                           vals: taxVals,             lowerIsBetter: true },
+    { type: 'major', label: 'Net Profit',                    vals: g('net_income') },
+  ];
+
+  wrap.innerHTML = buildFinTable(rows, years, { showYoY: true, showCagr: true });
 }
 
-// ── BALANCE SHEET CHART ──────────────────────────────
-function renderBSChart(d) {
-  const bs = (d.balance_sheet || []).slice().reverse();
-  if (!bs.length) return;
+// ── BALANCE SHEET TAB ────────────────────────────────
+function renderBalanceSheet(d) {
+  const bs   = (d.balance_sheet || []).sort((a, b) => a.year - b.year).slice(-5);
+  const wrap = document.getElementById("bs-table-wrap");
+  if (!bs.length) { wrap.innerHTML = '<p class="empty-state">No balance sheet data available.</p>'; return; }
 
-  const labels = bs.map(r => String(r.year));
-  mkChart("chart-bs", {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [
-        { label: "Total Assets",      data: bs.map(r => r.total_assets),      backgroundColor: C.blue,   borderRadius: 4 },
-        { label: "Total Liabilities", data: bs.map(r => r.total_liabilities), backgroundColor: C.red,    borderRadius: 4 },
-        { label: "Equity",            data: bs.map(r => r.equity),            backgroundColor: C.green,  borderRadius: 4 },
-        { label: "Cash",              data: bs.map(r => r.cash),              backgroundColor: C.teal,   borderRadius: 4 },
-      ],
-    },
-    options: barOpts(),
-  });
+  const years = bs.map(r => r.year);
+  const g = key => bs.map(r => toE(r[key] ?? null));
 
-  document.getElementById("bs-table-wrap").innerHTML = makeTable(
-    ["Year", "Total Assets", "Liabilities", "Equity", "Cash", "Total Debt"],
-    bs.map(r => [r.year, fmtM(r.total_assets), fmtM(r.total_liabilities),
-                 fmtM(r.equity), fmtM(r.cash), fmtM(r.total_debt)])
-  );
+  const rows = [
+    { type: 'section', label: 'ASSETS' },
+    { type: 'sub',   label: 'Cash & equivalents',       vals: g('cash') },
+    { type: 'sub',   label: 'Loans & receivables',      vals: g('loans') },
+    { type: 'sub',   label: 'Financial investments',    vals: g('investments') },
+    { type: 'sub',   label: 'Other assets',             vals: g('other_assets') },
+    { type: 'total', label: 'Total Assets',             vals: g('total_assets') },
+
+    { type: 'section', label: 'LIABILITIES' },
+    { type: 'sub',   label: 'Customer deposits',        vals: g('deposits'),            lowerIsBetter: true },
+    { type: 'sub',   label: 'Issued securities',        vals: g('issued_sec'),          lowerIsBetter: true },
+    { type: 'sub',   label: 'Total Debt',               vals: g('total_debt'),          lowerIsBetter: true },
+    { type: 'sub',   label: 'Other liabilities',        vals: g('other_liab'),          lowerIsBetter: true },
+    { type: 'total', label: 'Total Liabilities',        vals: g('total_liabilities'),   lowerIsBetter: true },
+
+    { type: 'section', label: 'EQUITY' },
+    { type: 'major', label: 'Total Equity',             vals: g('equity') },
+  ];
+
+  wrap.innerHTML = buildFinTable(rows, years, { showDelta: true, showYoY: true });
 }
 
-// ── CASH FLOW CHART ──────────────────────────────────
-function renderCFChart(d) {
-  const cf = (d.cash_flow || []).slice().reverse();
-  if (!cf.length) return;
+// ── CASH FLOW TAB ─────────────────────────────────────
+function renderCashFlow(d) {
+  const cf   = (d.cash_flow || []).sort((a, b) => a.year - b.year).slice(-2);
+  const wrap = document.getElementById("cf-table-wrap");
+  if (!cf.length) { wrap.innerHTML = '<p class="empty-state">No cash flow data available.</p>'; return; }
 
-  const labels = cf.map(r => String(r.year));
-  mkChart("chart-cf", {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [
-        { label: "Operating CF", data: cf.map(r => r.operating_cf), backgroundColor: C.green,  borderRadius: 4 },
-        { label: "Investing CF", data: cf.map(r => r.investing_cf), backgroundColor: C.red,    borderRadius: 4 },
-        { label: "Financing CF", data: cf.map(r => r.financing_cf), backgroundColor: C.yellow, borderRadius: 4 },
-        { label: "Free CF",      data: cf.map(r => r.free_cf),      backgroundColor: C.teal,   borderRadius: 4 },
-      ],
-    },
-    options: barOpts(),
-  });
+  const years = cf.map(r => r.year);
+  const g = key => cf.map(r => toE(r[key] ?? null));
 
-  document.getElementById("cf-table-wrap").innerHTML = makeTable(
-    ["Year", "Operating CF", "Investing CF", "Financing CF", "Free CF", "CapEx"],
-    cf.map(r => [r.year, fmtM(r.operating_cf), fmtM(r.investing_cf),
-                 fmtM(r.financing_cf), fmtM(r.free_cf), fmtM(r.capex)])
-  );
+  const rows = [
+    { type: 'sub',   label: 'Operating Cash Flow',  vals: g('operating_cf') },
+    { type: 'sub',   label: 'Investing Cash Flow',  vals: g('investing_cf') },
+    { type: 'sub',   label: 'Financing Cash Flow',  vals: g('financing_cf') },
+    { type: 'sub',   label: 'Capital Expenditure',  vals: g('capex'),       lowerIsBetter: true },
+    { type: 'major', label: 'Free Cash Flow',        vals: g('free_cf') },
+  ];
+
+  wrap.innerHTML = buildFinTable(rows, years, { showDelta: true, showYoY: true });
 }
 
-// ── QUARTERLY CHART ───────────────────────────────────
-function renderQuartersChart(d) {
-  const q = (d.quarters || []).slice().reverse();
-  if (!q.length) return;
-
-  const labels = q.map(r => r.period);
-  mkChart("chart-quarters", {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [
-        { label: "Revenue",    data: q.map(r => r.revenue),    backgroundColor: C.blue,  borderRadius: 4 },
-        { label: "Net Income", data: q.map(r => r.net_income), backgroundColor: C.green, borderRadius: 4 },
-      ],
-    },
-    options: barOpts(),
-  });
-
-  document.getElementById("q-table-wrap").innerHTML = makeTable(
-    ["Period", "Revenue", "Gross Profit", "Net Income"],
-    q.map(r => [r.period, fmtM(r.revenue), fmtM(r.gross_profit), fmtM(r.net_income)])
-  );
-}
-
-// ── RATIOS ────────────────────────────────────────────
-function renderRatios(d) {
+// ── RATIOS & KEY FIGURES TAB ──────────────────────────
+function renderRatiosAndKeyFigures(d) {
   const r   = d.ratios  || {};
-  const m   = d.market  || {};
-  const src = d.data_sources || {};
-  // Show data provenance banner
-  const tab = document.getElementById("tab-ratios");
-  let banner = tab.querySelector(".source-banner");
-  if (!banner) {
-    banner = el("div", "source-banner");
-    tab.insertBefore(banner, tab.firstChild);
+  const mkt = d.market  || {};
+  const co  = d.company || {};
+  const pl  = (d.profit_loss  || []).sort((a, b) => a.year - b.year);
+
+  // Compute margin trends from multi-year P&L
+  const nmVals = pl.map(row =>
+    row.revenue && row.net_income ? row.net_income / row.revenue * 100 : null
+  );
+  const omVals = pl.map(row =>
+    row.revenue && row.operating_income ? row.operating_income / row.revenue * 100 : null
+  );
+  const nmArrow = trendArrow(nmVals[nmVals.length - 1], nmVals[nmVals.length - 2]);
+  const omArrow = trendArrow(omVals[omVals.length - 1], omVals[omVals.length - 2]);
+
+  const wrap = document.getElementById("ratios-wrap");
+  wrap.innerHTML =
+    ratioSection("Per Share Data", [
+      ["EPS",                    r.eps,               v => fmt(v, 2) + " SEK"],
+      ["Dividend Per Share",     r.dividend_per_share,v => fmt(v, 2) + " SEK"],
+      ["P/E Ratio",              r.pe,                fmtPE],
+      ["Forward P/E",            r.forward_pe,        fmtPE],
+      ["P/B Ratio",              r.pb,                fmtPE],
+      ["P/S Ratio",              r.ps,                fmtPE],
+    ]) +
+    ratioSection("Profitability", [
+      ["Return on Equity (ROE)", r.roe,               fmtPct],
+      ["Return on Assets (ROA)", r.roa,               fmtPct],
+      ["Net Margin",             r.net_margin,        fmtPct, nmArrow],
+      ["Operating Margin",       r.operating_margin,  fmtPct, omArrow],
+      ["Gross Margin",           r.gross_margin,      fmtPct],
+    ]) +
+    ratioSection("Capital Adequacy & Income", [
+      ["Dividend Yield",         r.dividend_yield,    fmtPct],
+      ["Payout Ratio",           r.payout_ratio,      fmtPct],
+      ["Debt / Equity",          r.debt_to_equity,    v => fmt(v, 1) + "x"],
+      ["Beta (Market Risk)",     r.beta ?? mkt.beta,  v => fmt(v, 2)],
+      ["Current Ratio",          r.current_ratio,     v => fmt(v, 2)],
+    ]) +
+    ratioSection("Workforce", [
+      ["Full-time Employees",    co.employees,        v => Number(v).toLocaleString("sv-SE")],
+    ]);
+}
+
+// ── YOY ANALYSIS TAB ─────────────────────────────────
+function renderYoY(d) {
+  const pl   = (d.profit_loss   || []).sort((a, b) => a.year - b.year);
+  const bs   = (d.balance_sheet || []).sort((a, b) => a.year - b.year);
+  const cf   = (d.cash_flow     || []).sort((a, b) => a.year - b.year);
+  const wrap = document.getElementById("yoy-table-wrap");
+
+  if (pl.length < 2) {
+    wrap.innerHTML = '<p class="empty-state">Need at least 2 years of data for YoY analysis.</p>';
+    return;
   }
-  banner.innerHTML =
-    `<span class="src-item pdf">📄 Margins, ROE, ROA, DPS, Payout — <em>${src.financials || "Annual Report PDF"}</em></span>` +
-    `<span class="src-item calc">🔢 P/E, P/B, P/S — <em>PDF earnings × live price</em></span>` +
-    `<span class="src-item yf">📈 Beta — <em>${src.price_chart || "Yahoo Finance"}</em></span>`;
 
-  const sections = {
-    "ratios-val": [
-      ["P/E Ratio",          r.pe,             fmtPE],
-      ["Forward P/E",        r.forward_pe,     fmtPE],
-      ["P/B Ratio",          r.pb,             fmtPE],
-      ["P/S Ratio",          r.ps,             fmtPE],
-      ["EPS (TTM)",          r.eps,            v => fmt(v, 2) + " SEK"],
-      ["Forward EPS",        r.forward_eps,    v => fmt(v, 2) + " SEK"],
-      ["Beta",               r.beta,           v => fmt(v, 2)],
-    ],
-    "ratios-prof": [
-      ["ROE",                r.roe,            fmtPct],
-      ["ROA",                r.roa,            fmtPct],
-      ["Gross Margin",       r.gross_margin,   fmtPct],
-      ["Operating Margin",   r.operating_margin, fmtPct],
-      ["Net Margin",         r.net_margin,     fmtPct],
-    ],
-    "ratios-lev": [
-      ["Current Ratio",      r.current_ratio,  v => fmt(v, 2)],
-      ["Debt / Equity",      r.debt_to_equity, v => fmt(v, 2)],
-      ["Dividend Yield",     r.dividend_yield, fmtPct],
-      ["Payout Ratio",       r.payout_ratio,   fmtPct],
-    ],
-  };
+  const curr   = pl[pl.length - 1],  prev   = pl[pl.length - 2];
+  const bsC    = bs[bs.length - 1] || {}, bsP = bs[bs.length - 2] || {};
+  const cfC    = cf[cf.length - 1] || {}, cfP = cf[cf.length - 2] || {};
+  const prevY  = String(prev.year), currY = String(curr.year);
 
-  Object.entries(sections).forEach(([id, rows]) => {
-    const grid = document.getElementById(id);
-    grid.innerHTML = "";
-    rows.forEach(([label, val, fmt_fn]) => {
-      const card = el("div", "ratio-card");
-      const fmted = fmt_fn && val != null ? fmt_fn(val) : (val != null ? val : "—");
-      const cls = ratColor(label, val);
-      card.innerHTML = `
-        <div class="rc-label">${label}</div>
-        <div class="rc-value ${cls}">${fmted}</div>
-      `;
-      grid.appendChild(card);
-    });
+  const mkRow = (label, cV, pV, lb = false, type = 'sub') =>
+    ({ label, curr: toE(cV), prev: toE(pV), lb, type });
+
+  const groups = [
+    { section: 'INCOME STATEMENT' },
+    mkRow("Total Operating Income", curr.revenue,           prev.revenue,           false, 'total'),
+    mkRow("Operating Profit",       curr.operating_income,  prev.operating_income,  false, 'major'),
+    mkRow("Net Profit",             curr.net_income,        prev.net_income,        false, 'major'),
+    mkRow("EBITDA",                 curr.ebitda,            prev.ebitda),
+
+    { section: 'BALANCE SHEET' },
+    mkRow("Total Assets",           bsC.total_assets,       bsP.total_assets,       false, 'total'),
+    mkRow("Total Liabilities",      bsC.total_liabilities,  bsP.total_liabilities,  true,  'total'),
+    mkRow("Total Equity",           bsC.equity,             bsP.equity,             false, 'major'),
+    mkRow("Cash & Equivalents",     bsC.cash,               bsP.cash),
+
+    { section: 'CASH FLOW' },
+    mkRow("Operating Cash Flow",    cfC.operating_cf,       cfP.operating_cf,       false, 'total'),
+    mkRow("Free Cash Flow",         cfC.free_cf,            cfP.free_cf,            false, 'major'),
+    mkRow("Capital Expenditure",    cfC.capex,              cfP.capex,              true),
+  ];
+
+  let h = '<div class="fin-table-wrap"><table class="fin-table"><thead><tr>';
+  h += `<th>EURm</th><th>${prevY}</th><th>${currY}</th><th>Δ EURm</th><th>YoY %</th>`;
+  h += '</tr></thead><tbody>';
+
+  for (const row of groups) {
+    if (row.section) {
+      h += `<tr class="fin-section-header"><td colspan="5">${row.section}</td></tr>`;
+      continue;
+    }
+    const cls = row.type === 'major' ? 'fin-major'
+              : row.type === 'total' ? 'fin-total' : 'fin-sub';
+    h += `<tr class="${cls}"><td>${row.label}</td>`;
+    h += `<td>${fmtE(row.prev)}</td><td>${fmtE(row.curr)}</td>`;
+    h += deltaAbsCell(row.curr, row.prev, row.lb);
+    h += deltaYoYCell(row.curr, row.prev, row.lb);
+    h += '</tr>';
+  }
+  h += '</tbody></table></div>';
+  wrap.innerHTML = h;
+}
+
+// ── QOQ ANALYSIS TAB ─────────────────────────────────
+function renderQoQ(d) {
+  // quarters from API come newest-first; reverse to oldest-first for display
+  const quarters = (d.quarters || []).slice().reverse().slice(-5);
+  const wrap     = document.getElementById("qoq-table-wrap");
+
+  if (quarters.length < 2) {
+    wrap.innerHTML = '<p class="empty-state">Need at least 2 quarters of data for QoQ analysis.</p>';
+    return;
+  }
+
+  const metrics = [
+    { label: "Revenue",      key: "revenue" },
+    { label: "Gross Profit", key: "gross_profit" },
+    { label: "Net Profit",   key: "net_income" },
+  ];
+
+  // Header: EURm | Q1 | QoQ% | Q2 | QoQ% | …
+  let h = '<div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>EURm</th>';
+  quarters.forEach((q, i) => {
+    h += `<th>${q.period}</th>`;
+    if (i < quarters.length - 1) h += '<th>QoQ %</th>';
   });
+  h += '</tr></thead><tbody>';
+
+  for (const m of metrics) {
+    const vals = quarters.map(q => toE(q[m.key] ?? null));
+    h += `<tr class="fin-sub"><td>${m.label}</td>`;
+    vals.forEach((v, i) => {
+      h += `<td>${fmtE(v)}</td>`;
+      if (i < vals.length - 1) h += deltaYoYCell(vals[i + 1], v);
+    });
+    h += '</tr>';
+  }
+  h += '</tbody></table></div>';
+  wrap.innerHTML = h;
 }
 
 // ── SHAREHOLDERS ──────────────────────────────────────
@@ -824,26 +1003,10 @@ function renderShareholders(d) {
   });
 }
 
-// ── ANALYSIS TAB ──────────────────────────────────────
+// ── AI ANALYSIS TAB ───────────────────────────────────
 function renderAnalysis(d) {
   document.getElementById("analysis-text").textContent =
     d.analysis || "No analysis available.";
-
-  const pl = document.getElementById("peers-list");
-  pl.innerHTML = "";
-  (d.peers || []).forEach(p => {
-    const item = el("div", "peer-item");
-    item.innerHTML = `
-      <div>
-        <div class="peer-name">${p.name || "—"}</div>
-        <div class="peer-rel">${p.relationship || ""}</div>
-      </div>
-      <span class="peer-ticker">${p.ticker || "—"}</span>
-    `;
-    pl.appendChild(item);
-  });
-  if (!d.peers || !d.peers.length)
-    pl.innerHTML = '<p class="empty-state">No peer data.</p>';
 
   const nl = document.getElementById("news-list");
   nl.innerHTML = "";
@@ -862,6 +1025,43 @@ function renderAnalysis(d) {
   });
   if (!d.news || !d.news.length)
     nl.innerHTML = '<p class="empty-state">No news available.</p>';
+}
+
+// ── PEERS TAB ─────────────────────────────────────────
+function renderPeers(d) {
+  const peers = d.peers || [];
+  const wrap  = document.getElementById("peers-table-wrap");
+
+  if (!peers.length) {
+    wrap.innerHTML = '<p class="empty-state">No peer data available.</p>';
+    return;
+  }
+
+  let h = '<div class="fin-table-wrap"><table class="fin-table"><thead><tr>';
+  h += '<th>Company</th><th>Ticker</th><th>Relationship</th>';
+  h += '<th>P/E</th><th>ROE %</th><th>Div Yield %</th><th>Rev Growth %</th>';
+  h += '</tr></thead><tbody>';
+
+  for (const p of peers) {
+    const rgCls = p.revenue_growth_pct > 0 ? "delta-pos"
+                : p.revenue_growth_pct < 0 ? "delta-neg" : "";
+    const dyFmt = p.dividend_yield_pct != null
+      ? `<span class="delta-pos">${fmtPct(p.dividend_yield_pct)}</span>` : "—";
+    const rgFmt = p.revenue_growth_pct != null
+      ? `<span class="${rgCls}">${p.revenue_growth_pct >= 0 ? "+" : ""}${fmt(p.revenue_growth_pct, 1)}%</span>` : "—";
+
+    h += '<tr class="fin-sub">';
+    h += `<td style="color:var(--text);font-weight:500">${p.name || "—"}</td>`;
+    h += `<td style="color:var(--accent);font-family:monospace;font-size:0.8rem">${p.ticker || "—"}</td>`;
+    h += `<td style="color:var(--text3);font-size:0.78rem">${p.relationship || "—"}</td>`;
+    h += `<td>${p.pe != null ? fmtPE(p.pe) : "—"}</td>`;
+    h += `<td>${p.roe_pct != null ? fmtPct(p.roe_pct) : "—"}</td>`;
+    h += `<td>${dyFmt}</td>`;
+    h += `<td>${rgFmt}</td>`;
+    h += '</tr>';
+  }
+  h += '</tbody></table></div>';
+  wrap.innerHTML = h;
 }
 
 // ── Chart helpers ─────────────────────────────────────
