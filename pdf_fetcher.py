@@ -17,6 +17,7 @@ import json
 import os
 import re
 import time
+from datetime import date
 import requests
 import pdfplumber
 import anthropic
@@ -87,42 +88,77 @@ def _save_url_cache(company: str, data: dict) -> None:
         pass
 
 
+# ── Dynamic year / quarter helpers ───────────────────────────────────────────
+
+def _annual_year_keys() -> list[str]:
+    """Return [current_year_key, prev_year_key] e.g. ['annual_2026', 'annual_2025']."""
+    today = date.today()
+    return [f"annual_{today.year}", f"annual_{today.year - 1}"]
+
+
+def _recent_quarters(n: int = 4) -> list[str]:
+    """
+    Return the n most recently *completed* quarter labels, newest first.
+    E.g. on 2026-04-12 → ['Q1 2026', 'Q4 2025', 'Q3 2025', 'Q2 2025']
+    """
+    today = date.today()
+    # Quarter the current month belongs to (1-based)
+    current_q = (today.month - 1) // 3 + 1
+    # Step back one quarter to the last *completed* one
+    q, y = current_q - 1, today.year
+    if q == 0:
+        q, y = 4, y - 1
+    labels = []
+    for _ in range(n):
+        labels.append(f"Q{q} {y}")
+        q -= 1
+        if q == 0:
+            q, y = 4, y - 1
+    return labels
+
+
 # ── Single Claude call to find ALL report URLs ────────────────────────────────
 
 def find_report_urls(company: str) -> dict:
     """
     Ask Claude (with web_search) to find annual + quarterly report PDF URLs
-    for a Swedish company in ONE call.
+    for a Swedish company in ONE call. Years are computed dynamically from
+    today's date — no hardcoded year literals.
 
     Returns:
       {
-        "annual_2024": "https://...",   # or null
-        "annual_2023": "https://...",   # fallback
+        "annual_2026": "https://...",   # or null  (current year)
+        "annual_2025": "https://...",   # fallback  (previous year)
         "quarterly": [
-          {"period": "Q1 2025", "url": "https://..."},
+          {"period": "Q1 2026", "url": "https://..."},
           ...
         ]
       }
     """
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
+    year_keys   = _annual_year_keys()           # e.g. ['annual_2026', 'annual_2025']
+    quarters    = _recent_quarters(n=4)         # e.g. ['Q1 2026', 'Q4 2025', ...]
+    annual_years = [k.split("_")[1] for k in year_keys]   # ['2026', '2025']
+
+    annual_json  = "\n  ".join(f'"{k}": "URL or null",' for k in year_keys)
+    quarterly_json = "\n    ".join(
+        f'{{"period": "{q}", "url": "URL or null"}},' for q in quarters
+    )
+
     prompt = f"""You are a financial research assistant. Search the web and find direct PDF download URLs for {company}'s investor reports.
 
 Find:
-1. The most recent annual report PDF (2024 preferred, 2023 as fallback)
-2. The 4 most recent quarterly/interim report PDFs (2024-2025)
+1. The most recent annual report PDF ({annual_years[0]} preferred, {annual_years[1]} as fallback)
+2. The 4 most recent quarterly/interim report PDFs
 
 Search the company's official investor relations page and any direct PDF links.
 
 Respond ONLY with a JSON object in this exact format (no other text):
 {{
-  "annual_2024": "URL or null",
-  "annual_2023": "URL or null",
+  {annual_json}
   "quarterly": [
-    {{"period": "Q1 2025", "url": "URL or null"}},
-    {{"period": "Q4 2024", "url": "URL or null"}},
-    {{"period": "Q3 2024", "url": "URL or null"}},
-    {{"period": "Q2 2024", "url": "URL or null"}}
+    {quarterly_json}
   ]
 }}
 
@@ -162,7 +198,7 @@ Use null (not "null") for any URL you cannot find. Only include real, direct .pd
         print(f"  [claude] Error: {e}")
 
     # Return empty structure on failure
-    return {"annual_2024": None, "annual_2023": None, "quarterly": []}
+    return {k: None for k in _annual_year_keys()} | {"quarterly": []}
 
 
 # ── HTTP download ─────────────────────────────────────────────────────────────
@@ -229,7 +265,7 @@ def get_company_reports(ticker: str) -> dict:
 
     # ── Annual report ──
     annual = None
-    for year_key in ("annual_2024", "annual_2023"):
+    for year_key in _annual_year_keys():
         url = urls.get(year_key)
         if not url or url == "null":
             continue
