@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StockGPT for Siva</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ═══════════════════════ HEADER ═══════════════════════ -->
+<header class="site-header">
+  <div class="header-inner">
+    <div class="brand">
+      <span class="brand-flag">🇸🇪</span>
+      <div>
+        <h1 class="brand-title">StockGPT <span class="for-siva">for Siva</span></h1>
+        <p class="brand-sub">Swedish Stock Analysis · Nasdaq Stockholm</p>
+      </div>
+    </div>
+    <div class="search-wrap">
+      <div class="search-box">
+        <input id="ticker-input" type="text"
+          placeholder="e.g. NDA-SE.ST, ERIC-B.ST, VOLV-B.ST"
+          autocomplete="off" spellcheck="false">
+        <button id="analyse-btn">Analyse</button>
+      </div>
+      <div class="chips">
+        <span>Try:</span>
+        <button class="chip" onclick="setTicker('NDA-SE.ST')">Nordea</button>
+        <button class="chip" onclick="setTicker('ERIC-B.ST')">Ericsson</button>
+        <button class="chip" onclick="setTicker('VOLV-B.ST')">Volvo</button>
+        <button class="chip" onclick="setTicker('INVE-B.ST')">Investor AB</button>
+        <button class="chip" onclick="setTicker('SEB-A.ST')">SEB</button>
+        <button class="chip" onclick="setTicker('SAND.ST')">Sandvik</button>
+        <button class="chip demo-chip" onclick="loadDemo()">Demo ✦</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════════════════════ STATUS BAR ═══════════════════════ -->
+<div id="status-bar" class="status-bar hidden">
+  <div class="status-inner">
+    <span id="status-icon" class="status-icon">⏳</span>
+    <span id="status-text">Analysing…</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════ DASHBOARD ═══════════════════════ -->
+<main id="dashboard" class="dashboard hidden">
+
+  <!-- Company hero row -->
+  <div class="hero-row">
+    <div class="hero-left">
+      <div id="company-name" class="company-name"></div>
+      <div id="company-meta" class="company-meta"></div>
+    </div>
+    <div class="hero-right">
+      <div id="price-block" class="price-block"></div>
+      <div id="traffic-light" class="traffic-light">
+        <div class="tl-dot sell"  id="tl-sell"></div>
+        <div class="tl-dot hold"  id="tl-hold"></div>
+        <div class="tl-dot buy"   id="tl-buy"></div>
+      </div>
+      <div id="rating-badge" class="rating-badge"></div>
+    </div>
+  </div>
+
+  <!-- Key metric pills -->
+  <div id="metric-pills" class="metric-pills"></div>
+
+  <!-- Tab bar -->
+  <nav class="tab-bar">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="price">Price Chart</button>
+    <button class="tab-btn" data-tab="pl">Profit &amp; Loss</button>
+    <button class="tab-btn" data-tab="bs">Balance Sheet</button>
+    <button class="tab-btn" data-tab="cf">Cash Flow</button>
+    <button class="tab-btn" data-tab="quarters">Quarterly</button>
+    <button class="tab-btn" data-tab="ratios">Ratios</button>
+    <button class="tab-btn" data-tab="shareholders">Shareholders</button>
+    <button class="tab-btn" data-tab="analysis">AI Analysis</button>
+  </nav>
+
+  <!-- Tab panels -->
+  <div class="tab-panels">
+
+    <!-- 1. OVERVIEW -->
+    <section id="tab-overview" class="tab-panel active">
+      <div class="two-col">
+        <div>
+          <h3 class="section-heading">About the Company</h3>
+          <p id="company-desc" class="body-text"></p>
+          <div class="info-grid" id="company-info-grid"></div>
+        </div>
+        <div>
+          <h3 class="section-heading">Investment Recommendation</h3>
+          <div id="rec-card" class="rec-card"></div>
+          <h3 class="section-heading" style="margin-top:24px">Key Risks</h3>
+          <ul id="risks-list" class="bullet-list risk"></ul>
+          <h3 class="section-heading" style="margin-top:20px">Opportunities</h3>
+          <ul id="opps-list" class="bullet-list opp"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. PRICE CHART -->
+    <section id="tab-price" class="tab-panel">
+      <div class="chart-header-row">
+        <h3 class="section-heading">Price History</h3>
+        <div class="range-btns" id="price-range-btns">
+          <button class="range-btn" data-range="1W">1W</button>
+          <button class="range-btn" data-range="1M">1M</button>
+          <button class="range-btn" data-range="3M">3M</button>
+          <button class="range-btn" data-range="6M">6M</button>
+          <button class="range-btn active" data-range="1Y">1Y</button>
+          <button class="range-btn" data-range="5Y">5Y</button>
+        </div>
+      </div>
+      <div id="price-source-chip" class="tab-source-chip"></div>
+      <div class="chart-wrap tall">
+        <canvas id="chart-price"></canvas>
+      </div>
+      <h3 class="section-heading" style="margin-top:28px">Volume</h3>
+      <div class="chart-wrap short">
+        <canvas id="chart-volume"></canvas>
+      </div>
+    </section>
+
+    <!-- 3. PROFIT & LOSS -->
+    <section id="tab-pl" class="tab-panel">
+      <h3 class="section-heading">Annual Profit &amp; Loss (MSEK)</h3>
+      <div id="pl-source-chip" class="tab-source-chip"></div>
+      <div class="chart-wrap">
+        <canvas id="chart-pl"></canvas>
+      </div>
+      <div id="pl-table-wrap" class="table-wrap" style="margin-top:24px"></div>
+    </section>
+
+    <!-- 4. BALANCE SHEET -->
+    <section id="tab-bs" class="tab-panel">
+      <h3 class="section-heading">Balance Sheet (MSEK)</h3>
+      <div id="bs-source-chip" class="tab-source-chip"></div>
+      <div class="chart-wrap">
+        <canvas id="chart-bs"></canvas>
+      </div>
+      <div id="bs-table-wrap" class="table-wrap" style="margin-top:24px"></div>
+    </section>
+
+    <!-- 5. CASH FLOW -->
+    <section id="tab-cf" class="tab-panel">
+      <h3 class="section-heading">Cash Flow (MSEK)</h3>
+      <div id="cf-source-chip" class="tab-source-chip"></div>
+      <div class="chart-wrap">
+        <canvas id="chart-cf"></canvas>
+      </div>
+      <div id="cf-table-wrap" class="table-wrap" style="margin-top:24px"></div>
+    </section>
+
+    <!-- 6. QUARTERLY -->
+    <section id="tab-quarters" class="tab-panel">
+      <h3 class="section-heading">Quarterly Revenue &amp; Net Income (MSEK)</h3>
+      <div id="q-source-chip" class="tab-source-chip"></div>
+      <div class="chart-wrap">
+        <canvas id="chart-quarters"></canvas>
+      </div>
+      <div id="q-table-wrap" class="table-wrap" style="margin-top:24px"></div>
+    </section>
+
+    <!-- 7. RATIOS -->
+    <section id="tab-ratios" class="tab-panel">
+      <h3 class="section-heading">Valuation Ratios</h3>
+      <div id="ratios-val" class="ratio-grid"></div>
+      <h3 class="section-heading" style="margin-top:28px">Profitability &amp; Quality</h3>
+      <div id="ratios-prof" class="ratio-grid"></div>
+      <h3 class="section-heading" style="margin-top:28px">Leverage &amp; Dividends</h3>
+      <div id="ratios-lev" class="ratio-grid"></div>
+    </section>
+
+    <!-- 8. SHAREHOLDERS -->
+    <section id="tab-shareholders" class="tab-panel">
+      <div class="two-col">
+        <div>
+          <h3 class="section-heading">Top Institutional Holders</h3>
+          <div id="sh-table-wrap" class="table-wrap"></div>
+        </div>
+        <div>
+          <h3 class="section-heading">Ownership Distribution</h3>
+          <div class="chart-wrap donut-wrap">
+            <canvas id="chart-shareholders"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. AI ANALYSIS -->
+    <section id="tab-analysis" class="tab-panel">
+      <div class="analysis-grid">
+        <div class="analysis-main">
+          <h3 class="section-heading">AI Equity Analysis</h3>
+          <div id="analysis-source-chip" class="tab-source-chip"></div>
+          <div id="analysis-text" class="analysis-text"></div>
+        </div>
+        <div class="analysis-side">
+          <h3 class="section-heading">Peer Companies</h3>
+          <div id="peers-list" class="peers-list"></div>
+          <h3 class="section-heading" style="margin-top:24px">Recent News</h3>
+          <div id="news-list" class="news-list"></div>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /tab-panels -->
+
+  <div id="last-updated" class="last-updated"></div>
+</main>
+
+<script src="/static/js/main.js"></script>
+</body>
+</html>
