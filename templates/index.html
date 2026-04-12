@@ -217,6 +217,36 @@
   <div id="last-updated" class="last-updated"></div>
 </main>
 
+<!-- ═══════════════════════ FEEDBACK ═══════════════════════ -->
+<button id="feedback-btn" class="feedback-fab" onclick="openFeedback()">💬 Feedback</button>
+
+<div id="feedback-overlay" class="fb-overlay hidden" onclick="closeFeedbackOnOverlay(event)">
+  <div class="fb-modal" role="dialog" aria-modal="true" aria-labelledby="fb-title">
+
+    <div class="fb-header">
+      <span id="fb-title" class="fb-title">Share Feedback</span>
+      <button class="fb-close" onclick="closeFeedback()" aria-label="Close">✕</button>
+    </div>
+
+    <form id="feedback-form" novalidate>
+      <label class="fb-label" for="fb-ticker">Ticker <span class="fb-optional">(optional)</span></label>
+      <input id="fb-ticker" class="fb-input" type="text"
+             placeholder="e.g. NDA-SE.ST" autocomplete="off" spellcheck="false">
+
+      <label class="fb-label" for="fb-message">Message</label>
+      <textarea id="fb-message" class="fb-textarea" rows="4"
+                placeholder="What's working well? What could be better?" required></textarea>
+
+      <button type="submit" class="fb-submit" id="fb-submit-btn">Send feedback</button>
+    </form>
+
+    <div id="fb-success" class="fb-success hidden">
+      Thanks! Got your feedback 🙏
+    </div>
+
+  </div>
+</div>
+
 <script src="/static/js/main.js"></script>
 </body>
 </html>

@@ -847,3 +847,82 @@ function makeTable(headers, rows) {
   }).join("");
   return `<table class="data-table"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
 }
+
+// ════════════════════════════════════════════════════════
+//  FEEDBACK MODAL
+// ════════════════════════════════════════════════════════
+
+function openFeedback() {
+  // Pre-fill ticker if a stock is loaded
+  const tickerInput = document.getElementById("ticker-input");
+  const fbTicker    = document.getElementById("fb-ticker");
+  if (tickerInput.value.trim() && !fbTicker.value) {
+    fbTicker.value = tickerInput.value.trim().toUpperCase();
+  }
+  document.getElementById("feedback-overlay").classList.remove("hidden");
+  document.getElementById("fb-message").focus();
+}
+
+function closeFeedback() {
+  document.getElementById("feedback-overlay").classList.add("hidden");
+}
+
+function closeFeedbackOnOverlay(e) {
+  // Close only when clicking the dark backdrop, not the modal card itself
+  if (e.target === document.getElementById("feedback-overlay")) closeFeedback();
+}
+
+// Close on Escape key
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeFeedback();
+});
+
+// Submit via fetch — no page reload
+document.getElementById("feedback-form").addEventListener("submit", async e => {
+  e.preventDefault();
+
+  const message = document.getElementById("fb-message").value.trim();
+  if (!message) {
+    document.getElementById("fb-message").focus();
+    return;
+  }
+
+  const submitBtn = document.getElementById("fb-submit-btn");
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Sending…";
+
+  try {
+    // Build payload explicitly so Formspree field names are reliable
+    const payload = new FormData();
+    payload.append("ticker",  document.getElementById("fb-ticker").value.trim());
+    payload.append("message", message);
+
+    const res = await fetch("https://formspree.io/f/xlgarjwy", {
+      method:  "POST",
+      headers: { "Accept": "application/json" },
+      body:    payload,
+    });
+
+    if (res.ok) {
+      document.getElementById("feedback-form").classList.add("hidden");
+      document.getElementById("fb-success").classList.remove("hidden");
+      // Auto-close after 3 s and reset for next use
+      setTimeout(() => {
+        closeFeedback();
+        setTimeout(() => {
+          document.getElementById("feedback-form").classList.remove("hidden");
+          document.getElementById("fb-success").classList.add("hidden");
+          document.getElementById("feedback-form").reset();
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Send feedback";
+        }, 300);
+      }, 3000);
+    } else {
+      throw new Error("Server error " + res.status);
+    }
+  } catch (err) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Send feedback";
+    alert("Couldn't send feedback — please try again.");
+  }
+});
