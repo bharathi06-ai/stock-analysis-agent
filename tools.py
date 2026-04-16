@@ -3,15 +3,15 @@ tools.py — Phase 4 (PDF-primary data pipeline)
 
 Data source hierarchy
 ─────────────────────
-  get_price_data             yfinance  → price, 52-week, market cap, chart,
-                                         beta, institutional holders, company meta
+  get_price_data             Finnhub   → price, 52-week, market cap, chart,
+                                         beta, company meta
   extract_financials         Claude    → parse PDF text → P&L, BS, CF, ratios, quarters
   fetch_reports              pdf_fetcher → download + extract PDF text
   search_news                Claude + web_search → recent news
   find_peers                 Claude + web_search → peer tickers
 
 Nothing that comes from a company's own published reports (income statement,
-balance sheet, cash flow, EPS, DPS, margins, ROE …) is taken from yfinance.
+balance sheet, cash flow, EPS, DPS, margins, ROE …) is taken from Finnhub.
 """
 
 import json
@@ -22,40 +22,35 @@ import time as _time_mod
 
 import anthropic
 import requests
-import yfinance as yf
 from dotenv import load_dotenv
 
 from pdf_fetcher import get_company_reports, ticker_to_name
 
 load_dotenv()
 
-# ── yfinance session — rotated User-Agent + realistic browser headers ─────────
-_USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0",
-]
+# ── Finnhub config ────────────────────────────────────────────────────────────
+_FINNHUB_BASE = "https://finnhub.io/api/v1"
 
-_yf_session = requests.Session()
-_yf_session.headers.update({
-    "User-Agent":      random.choice(_USER_AGENTS),
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br",
-    "DNT":             "1",
-    "Connection":      "keep-alive",
-})
+# Map yfinance-style tickers (used everywhere in the app) → Finnhub symbols
+_TICKER_MAP: dict[str, str] = {
+    "NDA-SE.ST":  "NDA-SE:OMX",
+    "ERIC-B.ST":  "ERIC-B:OMX",
+    "VOLV-B.ST":  "VOLV-B:OMX",
+    "SEB-A.ST":   "SEB-A:OMX",
+    "SAND.ST":    "SAND:OMX",
+    "INVE-B.ST":  "INVE-B:OMX",
+    "ATCO-B.ST":  "ATCO-B:OMX",
+}
 
 
-def _yf_sleep() -> None:
-    """Random 3–7 s pause between yfinance calls to mimic human browsing."""
-    delay = random.uniform(3.0, 7.0)
-    print(f"  [yfinance] sleeping {delay:.1f}s…")
-    _time_mod.sleep(delay)
-
-
-def _rotate_ua() -> None:
-    """Pick a fresh random User-Agent for the shared session."""
-    _yf_session.headers["User-Agent"] = random.choice(_USER_AGENTS)
+def _to_finnhub_ticker(ticker: str) -> str:
+    """Convert yfinance ticker format to Finnhub symbol format."""
+    if ticker in _TICKER_MAP:
+        return _TICKER_MAP[ticker]
+    # Generic fallback: XXXX.ST → XXXX:OMX
+    if ticker.endswith(".ST"):
+        return ticker[:-3] + ":OMX"
+    return ticker
 
 # ── In-memory ticker cache (5-minute TTL) ────────────────────────────────────
 _mem_cache: dict = {}   # {ticker: {"ts": float, "data": dict}}
@@ -177,44 +172,20 @@ def _extract_cache(ticker: str) -> str:
     return os.path.join(_CACHE_DIR, f"{_safe_ticker(ticker)}_extract.json")
 
 
-# ── yfinance retry (exponential backoff: 2s → 4s → 8s) ──────────────────────
-
-def _yf_retry(fn, retries=3, base_wait=2):
-    for attempt in range(retries):
-        try:
-            return fn()
-        except Exception as e:
-            err = str(e)
-            is_rate_limit = (
-                "Too Many Requests" in err or "429" in err or "Rate" in err
-            )
-            if is_rate_limit or attempt < retries - 1:
-                wait = base_wait * (2 ** attempt)   # 2s, 4s, 8s
-                print(f"  [yfinance] {'Rate limited' if is_rate_limit else 'Error'}, "
-                      f"waiting {wait}s (attempt {attempt+1}/{retries})…")
-                _time_mod.sleep(wait)
-                if not is_rate_limit:
-                    raise   # re-raise non-rate-limit errors after logging
-            else:
-                raise
-    raise RuntimeError("yfinance rate limited after all retries")
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 #  TOOL 1 — get_price_data
-#  yfinance: price, 52-week, market cap, price chart, beta, holders
-#  Company meta (name, sector, description) also from yfinance
-#  NO financials, NO ratios from yfinance
+#  Finnhub: price, 52-week, market cap, 1-year chart, beta, company meta
+#  NO financials, NO ratios from Finnhub
 # ══════════════════════════════════════════════════════════════════════════════
 
 def get_price_data(ticker: str) -> dict:
     """
-    Fetch live price + chart data from yfinance.
-    Returns price, currency, market cap, 52-week range, 1-year chart,
-    beta, institutional holders, and basic company meta (name/sector/description).
+    Fetch live price + chart data from Finnhub.
+    Returns price, currency, market cap, 52-week range, 1-year daily chart,
+    beta, and basic company meta (name/sector).
     Financial statements and ratios are NOT fetched here — those come from PDFs.
+    Institutional holders are a Finnhub paid feature; investors returns [].
     """
-    # In-memory cache check (5-minute TTL — avoids repeated yfinance calls)
     mem = _mem_get(ticker)
     if mem:
         return mem
@@ -224,111 +195,86 @@ def get_price_data(ticker: str) -> dict:
         _mem_set(ticker, cached)
         return cached
 
-    print(f"  [yfinance] Fetching price data for {ticker}…")
+    api_key   = os.environ.get("FINNHUB_KEY", "")
+    fh_ticker = _to_finnhub_ticker(ticker)
+    print(f"  [finnhub] Fetching price data for {ticker} ({fh_ticker})…")
+
     try:
-        stock = yf.Ticker(ticker, session=_yf_session)
+        session = requests.Session()
 
-        # ── fast_info: lightweight, rarely rate-limited ──
-        fi = _yf_retry(lambda: stock.fast_info)
-        price      = getattr(fi, "last_price",  None)
-        currency   = getattr(fi, "currency",    "SEK")
-        mc         = getattr(fi, "market_cap",  None)
-        w52_high   = getattr(fi, "year_high",   None)
-        w52_low    = getattr(fi, "year_low",    None)
-        shares_out = getattr(fi, "shares",      None)
+        def _fh(endpoint: str, params: dict | None = None) -> dict:
+            p = params or {}
+            p["token"] = api_key
+            r = session.get(f"{_FINNHUB_BASE}{endpoint}", params=p, timeout=15)
+            r.raise_for_status()
+            return r.json()
 
-        # ── Market-cap currency correction ───────────────────────────────────
-        # Dual-listed Nordic stocks (e.g. Nordea NDA-SE.ST) expose a mismatch:
-        #   fast_info.currency  = "EUR"  (Helsinki primary)
-        #   fast_info.last_price = SEK   (Stockholm quote)
-        #   fast_info.market_cap = shares × EUR_price  ← ~10.86× too small in SEK
-        #
-        # Strategy: if currency ≠ SEK, recompute from the SEK price we already
-        # have multiplied by shares_outstanding (avoids any FX call).
-        # Fallback: fetch live EUR/SEK from yfinance if shares are missing.
-        print(f"  [yfinance] raw market_cap={mc!r}  fast_info.currency={currency!r}")
-        if currency != "SEK" and mc is not None:
-            if price is not None and shares_out is not None and shares_out > 0:
-                mc_corrected = price * shares_out
-                print(f"  [yfinance] Non-SEK market_cap detected "
-                      f"({currency}, raw={mc:,.0f}). "
-                      f"Recomputing: {price:.2f} SEK × {int(shares_out):,} shares "
-                      f"= {mc_corrected:,.0f} SEK")
-                mc = mc_corrected
-            else:
-                # Fallback: live EUR/SEK rate (or hardcoded default)
-                eur_sek = 10.86
-                try:
-                    fx = yf.Ticker("EURSEK=X", session=_yf_session)
-                    rate = getattr(fx.fast_info, "last_price", None)
-                    if rate and 8.0 < float(rate) < 16.0:
-                        eur_sek = float(rate)
-                except Exception:
-                    pass
-                mc_corrected = mc * eur_sek
-                print(f"  [yfinance] Non-SEK market_cap detected "
-                      f"({currency}, raw={mc:,.0f}). "
-                      f"EUR/SEK={eur_sek:.4f} → {mc_corrected:,.0f} SEK")
-                mc = mc_corrected
-            currency = "SEK"   # price and market_cap are now both in SEK
+        # ── Company profile ──────────────────────────────────────────────────
+        profile = _fh("/stock/profile2", {"symbol": fh_ticker})
 
-        # ── .info: company meta + beta only (no financials) ──
-        _rotate_ua(); _yf_sleep()
-        info = {}
-        try:
-            info = _yf_retry(lambda: stock.info, retries=2, base_wait=2) or {}
-        except Exception as e:
-            print(f"  [yfinance] .info unavailable ({e}), using fast_info only")
+        # ── Quote (current price) ────────────────────────────────────────────
+        quote   = _fh("/quote", {"symbol": fh_ticker})
+        price   = quote.get("c")          # current price
+        currency = profile.get("currency", "SEK")
 
-        # ── 1-year price history for chart ──
-        _rotate_ua(); _yf_sleep()
-        hist = _yf_retry(lambda: stock.history(period="1y"))
-        chart_labels  = [d.strftime("%Y-%m-%d") for d in hist.index]
-        chart_prices  = [_r(p, 2) for p in hist["Close"].tolist()]
-        chart_volumes = [int(v) for v in hist["Volume"].tolist()]
+        # ── 1-year daily candles (chart) ─────────────────────────────────────
+        now          = int(_time_mod.time())
+        one_year_ago = now - 365 * 24 * 3600
+        candles = _fh("/stock/candle", {
+            "symbol":     fh_ticker,
+            "resolution": "D",
+            "from":       one_year_ago,
+            "to":         now,
+        })
 
-        # ── Institutional holders ──
-        _rotate_ua(); _yf_sleep()
-        investors = []
-        try:
-            ih = _yf_retry(lambda: stock.institutional_holders, retries=2, base_wait=2)
-            if ih is not None and not ih.empty:
-                for _, row in ih.head(10).iterrows():
-                    pct_val = row.get("% Out", row.get("pctHeld", None))
-                    investors.append({
-                        "name":   str(row.get("Holder", row.get("Name", ""))),
-                        "shares": int(row.get("Shares", 0)),
-                        "pct":    _pct(pct_val),
-                        "value":  _m(row.get("Value", None)),
-                    })
-        except Exception:
-            pass
+        chart_labels, chart_prices, chart_volumes = [], [], []
+        if candles.get("s") == "ok":
+            from datetime import datetime as _dt
+            for ts, c, v in zip(candles.get("t", []),
+                                 candles.get("c", []),
+                                 candles.get("v", [])):
+                chart_labels.append(_dt.utcfromtimestamp(ts).strftime("%Y-%m-%d"))
+                chart_prices.append(_r(c, 2))
+                chart_volumes.append(int(v) if v else 0)
+
+        # ── Metrics (52-week range, beta, avg volume) ─────────────────────────
+        metrics = _fh("/stock/metric", {"symbol": fh_ticker, "metric": "all"})
+        m = metrics.get("metric", {})
+
+        w52_high = m.get("52WeekHigh") or (max(chart_prices) if chart_prices else None)
+        w52_low  = m.get("52WeekLow")  or (min(chart_prices) if chart_prices else None)
+        avg_vol  = m.get("10DayAverageTradingVolume")
+        if avg_vol:
+            avg_vol = int(avg_vol * 1_000_000)   # Finnhub returns in millions
+
+        # ── Market cap: price × shares (keeps everything in SEK) ─────────────
+        shares_m    = _r(profile.get("shareOutstanding"), 2)   # already millions
+        market_cap_m = _r(price * shares_m, 0) if price and shares_m else None
 
         result = {
             "success": True,
             "company": {
-                "name":        _safe(info, "longName", ticker_to_name(ticker)),
+                "name":        profile.get("name") or ticker_to_name(ticker),
                 "ticker":      ticker,
-                "sector":      _safe(info, "sector",   "N/A"),
-                "industry":    _safe(info, "industry", "N/A"),
-                "description": _safe(info, "longBusinessSummary", ""),
-                "website":     _safe(info, "website",  ""),
-                "employees":   _safe(info, "fullTimeEmployees"),
-                "country":     _safe(info, "country",  "Sweden"),
-                "exchange":    _safe(info, "exchange", "STO"),
+                "sector":      profile.get("finnhubIndustry", "N/A"),
+                "industry":    profile.get("finnhubIndustry", "N/A"),
+                "description": "",   # not available on Finnhub free tier
+                "website":     profile.get("weburl", ""),
+                "employees":   profile.get("employeeTotal"),
+                "country":     profile.get("country", "Sweden"),
+                "exchange":    profile.get("exchange", "STO"),
             },
             "market": {
-                "price":              price or _safe(info, "currentPrice"),
-                "currency":           currency,
-                "market_cap_m":       _m(mc),
-                "week_52_high":       w52_high or _safe(info, "fiftyTwoWeekHigh"),
-                "week_52_low":        w52_low  or _safe(info, "fiftyTwoWeekLow"),
-                "shares_outstanding_m": _m(shares_out or _safe(info, "sharesOutstanding")),
-                "avg_volume":         _safe(info, "averageVolume"),
-                # beta is a technical/market metric, not a financial statement item
-                "beta":               _r(_safe(info, "beta")),
+                "price":                price,
+                "currency":             currency,
+                "market_cap_m":         market_cap_m,
+                "week_52_high":         _r(w52_high, 2),
+                "week_52_low":          _r(w52_low, 2),
+                "shares_outstanding_m": shares_m,
+                "avg_volume":           avg_vol,
+                "beta":                 _r(m.get("beta"), 2),
             },
-            "investors": investors,
+            "investors": [],   # institutional holders require Finnhub paid plan
             "chart": {
                 "labels":  chart_labels[-252:],
                 "prices":  chart_prices[-252:],
@@ -336,15 +282,15 @@ def get_price_data(ticker: str) -> dict:
             },
         }
 
-        print(f"  [yfinance] OK — price={price} {currency}, "
-              f"market_cap={_m(mc)} MSEK, "
+        print(f"  [finnhub] OK — price={price} {currency}, "
+              f"market_cap={market_cap_m} MSEK, "
               f"chart={len(chart_labels)} pts")
         _save_cache(_price_cache(ticker), result)
         _mem_set(ticker, result)
         return result
 
     except Exception as e:
-        print(f"  [yfinance] Error: {e}")
+        print(f"  [finnhub] Error: {e}")
         return {"success": False, "error": str(e)}
 
 
