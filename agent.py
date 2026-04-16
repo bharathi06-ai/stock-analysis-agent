@@ -38,6 +38,7 @@ from tools import (
     find_peers,
     _r,
 )
+from db import get_cached_analysis, save_analysis, is_cache_valid
 
 load_dotenv()
 
@@ -237,7 +238,7 @@ def compute_ratios(price_data: dict, pdf_financials: dict) -> dict:
 #  Main orchestrator
 # ══════════════════════════════════════════════════════════════════════════════
 
-def analyse_stock(ticker: str, progress_callback=None) -> dict:
+def analyse_stock(ticker: str, progress_callback=None, force_refresh: bool = False) -> dict:
     """
     Full stock analysis pipeline.
 
@@ -259,6 +260,15 @@ def analyse_stock(ticker: str, progress_callback=None) -> dict:
     print(f"\n{'='*60}")
     print(f"StockGPT for Siva — analysing: {ticker}")
     print(f"{'='*60}")
+
+    # ── 0. Supabase cache check ────────────────────────────────────────────────
+    if not force_refresh and is_cache_valid(ticker):
+        cached = get_cached_analysis(ticker)
+        if cached is not None:
+            if progress_callback:
+                progress_callback("Loaded from cache", 6, TOTAL_STEPS)
+            print(f"  [cache] Returning cached result for {ticker}")
+            return cached
 
     # ── 1. Live price + chart (yfinance) ─────────────────────────────────────
     _emit("Fetching live price data…", 1)
@@ -362,6 +372,9 @@ def analyse_stock(ticker: str, progress_callback=None) -> dict:
     print(f"  News      : {len(dashboard['news'])}")
     print(f"  Rating    : {dashboard['recommendation'].get('rating')}")
     print(f"{'='*60}\n")
+
+    # ── 9. Persist to Supabase cache ──────────────────────────────────────────
+    save_analysis(ticker, dashboard)
 
     return dashboard
 

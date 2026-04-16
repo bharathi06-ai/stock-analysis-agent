@@ -3,15 +3,44 @@ import os
 import queue
 import re
 import threading
-from flask import Flask, render_template, request, jsonify, Response, stream_with_context
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context, session, redirect, url_for
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
 # Valid ticker pattern: letters, digits, hyphens, dots — max 20 chars
 TICKER_RE = re.compile(r"^[A-Za-z0-9\-\.]{1,20}$")
+
+
+@app.before_request
+def require_login():
+    if request.endpoint in ("login", "logout", "static"):
+        return
+    if not session.get("auth"):
+        return redirect(url_for("login", next=request.path))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        expected = os.environ.get("LOGIN_PASSWORD", "")
+        if password == expected:
+            session["auth"] = True
+            next_url = request.args.get("next") or url_for("index")
+            return redirect(next_url)
+        error = "Incorrect password"
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 @app.route("/")
@@ -295,6 +324,59 @@ def analyse():
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",   # tell nginx / Render not to buffer
+        },
+    )
+
+
+@app.route("/api/refresh", methods=["POST"])
+def refresh():
+    """Force re-run of the full pipeline for a ticker, bypassing the cache."""
+    data = request.get_json(silent=True) or {}
+    ticker = (data.get("ticker") or "").strip().upper()
+
+    if not ticker:
+        return jsonify({"error": "No ticker provided"}), 400
+    if not TICKER_RE.match(ticker):
+        return jsonify({"error": "Invalid ticker format"}), 400
+
+    q = queue.Queue()
+
+    def run():
+        from agent import analyse_stock
+
+        def on_progress(message, step, total):
+            q.put({"type": "progress", "message": message,
+                   "step": step, "total": total})
+
+        try:
+            result = analyse_stock(ticker, progress_callback=on_progress,
+                                   force_refresh=True)
+            if "error" in result:
+                q.put({"type": "error", "message": result["error"]})
+            else:
+                q.put({"type": "done", "result": result})
+        except Exception as exc:
+            q.put({"type": "error", "message": str(exc)})
+
+    threading.Thread(target=run, daemon=True).start()
+
+    def generate():
+        while True:
+            try:
+                event = q.get(timeout=180)
+            except queue.Empty:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Refresh timed out after 3 minutes'})}\n\n"
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+            if event["type"] in ("done", "error"):
+                break
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
         },
     )
 
