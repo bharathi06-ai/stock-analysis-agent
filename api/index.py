@@ -11,7 +11,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-app = Flask(__name__)
+_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+app = Flask(__name__,
+    template_folder=os.path.join(_root, 'templates'),
+    static_folder=os.path.join(_root, 'static')
+)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
 # Valid ticker pattern: letters, digits, hyphens, dots — max 20 chars
