@@ -283,7 +283,7 @@ button#analyse-btn:disabled { border-color: #555; color: #666; cursor: not-allow
   min-width: 80px;
 }
 
-.rating-badge.buy  { background: #E8F5E9; color: var(--green);  border: 1px solid #A5D6A7; }
+.rating-badge.buy  { background: var(--bg2); color: var(--accent2); border: 1px solid var(--accent); }
 .rating-badge.hold { background: #FFF8E1; color: var(--yellow); border: 1px solid #FFE082; }
 .rating-badge.sell { background: #FFEBEE; color: var(--red);    border: 1px solid #EF9A9A; }
 
