@@ -56,7 +56,7 @@ def ticker_to_name(ticker: str) -> str:
 
 # ── URL cache (avoids repeated haiku calls for the same company) ──────────────
 
-_URL_CACHE_DIR = os.path.join(os.path.dirname(__file__), ".yf_cache")
+_URL_CACHE_DIR = os.path.join(os.environ.get("CACHE_DIR", "/tmp"), ".yf_cache")
 
 
 def _url_cache_path(company: str) -> str:

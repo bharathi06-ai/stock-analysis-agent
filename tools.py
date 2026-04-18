@@ -33,8 +33,8 @@ _FINNHUB_BASE = "https://finnhub.io/api/v1"
 
 # Map yfinance-style tickers (used everywhere in the app) → Finnhub symbols
 _TICKER_MAP: dict[str, str] = {
-    "NDA-SE.ST":  "NDA-SE:OMX",
-    "NDA-SE-ST":  "NDA-SE:OMX",   # fallback if dot is lost in transit
+    "NDA-SE.ST":  "NDA-SE",
+    "NDA-SE-ST":  "NDA-SE",       # fallback if dot is lost in transit
     "ERIC-B.ST":  "ERIC-B:OMX",
     "VOLV-B.ST":  "VOLV-B:OMX",
     "SEB-A.ST":   "SEB-A:OMX",
@@ -48,9 +48,9 @@ def _to_finnhub_ticker(ticker: str) -> str:
     """Convert yfinance ticker format to Finnhub symbol format."""
     if ticker in _TICKER_MAP:
         return _TICKER_MAP[ticker]
-    # Generic fallback: XXXX.ST → XXXX:OMX
+    # Generic fallback: XXXX.ST → XXXX (drop exchange suffix)
     if ticker.endswith(".ST"):
-        return ticker[:-3] + ":OMX"
+        return ticker[:-3]
     return ticker
 
 # ── In-memory ticker cache (5-minute TTL) ────────────────────────────────────
