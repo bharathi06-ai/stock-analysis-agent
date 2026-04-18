@@ -92,8 +92,7 @@ def save_analysis(ticker: str, data: dict) -> None:
         print(f"[db] save_analysis error: {exc}")
 
 
-def is_cache_valid(ticker: str, max_age_days: int = 90) -> bool:
-    return False  # temporarily disabled to force fresh data
+def is_cache_valid(ticker: str, max_age_hours: int = 24) -> bool:
     client = _get_client()
     if client is None:
         return False
@@ -115,8 +114,8 @@ def is_cache_valid(ticker: str, max_age_days: int = 90) -> bool:
             generated_at = generated_at.replace(tzinfo=timezone.utc)
 
         age = datetime.now(timezone.utc) - generated_at
-        valid = age < timedelta(days=max_age_days)
-        print(f"[db] Cache for {ticker}: age={age.days}d, max={max_age_days}d, valid={valid}")
+        valid = age < timedelta(hours=max_age_hours)
+        print(f"[db] Cache for {ticker}: age={int(age.total_seconds()//3600)}h, max={max_age_hours}h, valid={valid}")
         return valid
     except Exception as exc:
         print(f"[db] is_cache_valid error: {exc}")
