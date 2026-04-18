@@ -1233,7 +1233,7 @@ async function extractPdfText(file) {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
   const total = pdf.numPages;
-  const MAX_PAGES = 350;
+  const MAX_PAGES = 400;
 
   // Annual reports bury financial statements in the latter half (often pages 150–334+).
   // Strategy: extract up to 30 cover pages for context, then prioritise from 40% of

@@ -299,8 +299,8 @@ def get_price_data(ticker: str) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Increased limits so the extraction call gets enough table data
-_MAX_ANNUAL    = 35_000   # chars  (was 12_000)
-_MAX_QUARTERLY =  8_000   # chars per quarter (was 4_000)
+_MAX_ANNUAL    = 500_000  # chars — SEB financials start page 208; need full document
+_MAX_QUARTERLY =  20_000  # chars per quarter
 
 
 def fetch_reports(ticker: str) -> dict:
@@ -661,7 +661,7 @@ def extract_financials_from_reports(
     user_msg = f"""Extract all financial data for {company} from the report text below.
 
 ━━━ ANNUAL REPORT ━━━
-{annual_text[:35_000]}
+{annual_text[:_MAX_ANNUAL]}
 
 ━━━ QUARTERLY REPORTS ━━━
 {quarterly_text}
