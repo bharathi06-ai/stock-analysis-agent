@@ -40,8 +40,10 @@ def _get_client():
         return _client
 
     url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_ANON_KEY")
+    # Accept both naming conventions (local .env uses SUPABASE_ANON_KEY; Vercel may use SUPABASE_KEY)
+    key = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_KEY")
     if not url or not key:
+        print(f"[db] Missing env vars — SUPABASE_URL={'set' if url else 'MISSING'}, key={'set' if key else 'MISSING'}")
         return None
 
     try:

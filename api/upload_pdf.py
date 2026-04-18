@@ -40,10 +40,20 @@ def handle_upload():
     if len(pdf_text) < MIN_TEXT_LEN:
         return jsonify({"error": "Extracted text too short — is this a scanned/image PDF?"}), 422
 
-    from db import save_pdf_text, clear_analysis_cache
-    saved = save_pdf_text(ticker, report_type, period, pdf_text)
+    from db import save_pdf_text, clear_analysis_cache, _get_client
+    # Check client first so we can give a precise error
+    if _get_client() is None:
+        print("[upload] Supabase client is None — check SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_KEY env vars")
+        return jsonify({"error": "Database not configured — missing Supabase env vars on server"}), 500
+
+    try:
+        saved = save_pdf_text(ticker, report_type, period, pdf_text)
+    except Exception as exc:
+        print(f"[upload] save_pdf_text raised: {exc}")
+        return jsonify({"error": f"Database error: {exc}"}), 500
+
     if not saved:
-        return jsonify({"error": "Failed to save to database — check Supabase connection"}), 500
+        return jsonify({"error": "Failed to save to database — check Vercel logs for details"}), 500
 
     clear_analysis_cache(ticker)
 
