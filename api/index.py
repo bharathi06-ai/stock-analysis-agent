@@ -391,11 +391,12 @@ def refresh():
     )
 
 
+from upload_pdf import handle_upload as _handle_upload
+
 @app.route("/api/upload", methods=["POST"])
 def upload_pdf():
     """Accept a PDF upload, extract text, store in Supabase, clear analysis cache."""
-    from api.upload_pdf import handle_upload
-    return handle_upload()
+    return _handle_upload()
 
 
 if __name__ == "__main__":

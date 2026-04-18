@@ -25,6 +25,7 @@ MIN_TEXT_LEN = 200
 
 def handle_upload():
     """Call this from the Flask route."""
+    print("[upload] handler v2 reached")
     try:
         return _handle_upload_inner()
     except Exception as e:
