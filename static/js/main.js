@@ -730,6 +730,7 @@ function drawPriceChart(range) {
 // ── INCOME STATEMENT TAB ─────────────────────────────
 function renderIncomeStatement(d) {
   const pl   = (d.profit_loss || []).sort((a, b) => a.year - b.year).slice(-5);
+  console.log("[income] profit_loss rows:", pl.length, pl[0] || null);
   const wrap = document.getElementById("income-table-wrap");
   if (!pl.length) { wrap.innerHTML = '<p class="empty-state">No income statement data available.</p>'; return; }
 

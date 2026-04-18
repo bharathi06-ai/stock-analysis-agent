@@ -464,22 +464,43 @@ _EXTRACT_SCHEMA = {
     "profit_loss": [
         {
             "year": 2024,
-            "revenue": None,
-            "gross_profit": None,
-            "operating_income": None,
-            "net_income": None,
-            "ebitda": None,
-            "eps": None,
+            # ── Income lines (banks: use NII / fee / other breakdown; industrials: use revenue) ──
+            "nii": None,                # Net interest income (banks only)
+            "fee_income": None,         # Net fee & commission income (banks only)
+            "insurance_result": None,   # Net insurance result (banks only)
+            "fair_value": None,         # Fair value / trading result (banks only)
+            "other_income": None,       # Other operating income
+            "revenue": None,            # Total operating income / net sales (ALL companies)
+            # ── Expense lines ──────────────────────────────────────────────────
+            "staff_costs": None,        # Staff / personnel costs (negative MSEK)
+            "other_expenses": None,     # Other operating expenses (negative MSEK)
+            "reg_fees": None,           # Regulatory fees / resolution fund (banks)
+            "da": None,                 # Depreciation & amortisation (negative MSEK)
+            # ── Profit lines ───────────────────────────────────────────────────
+            "gross_profit": None,       # Gross profit (industrials only)
+            "operating_income": None,   # Operating profit / EBIT
+            "net_income": None,         # Net profit for the period
+            "ebitda": None,             # EBITDA
+            "eps": None,                # Earnings per share (SEK)
         }
     ],
     "balance_sheet": [
         {
             "year": 2024,
-            "total_assets": None,
-            "total_liabilities": None,
-            "equity": None,
-            "cash": None,
-            "total_debt": None,
+            # ── Assets ─────────────────────────────────────────────────────────
+            "cash": None,               # Cash & equivalents / liquid assets
+            "loans": None,              # Loans & receivables to customers/banks
+            "investments": None,        # Financial investments / securities
+            "other_assets": None,       # Other assets (catch-all)
+            "total_assets": None,       # Total assets (Balansomslutning)
+            # ── Liabilities ────────────────────────────────────────────────────
+            "deposits": None,           # Customer deposits / due to customers
+            "issued_sec": None,         # Issued securities / bonds
+            "total_debt": None,         # Total interest-bearing debt
+            "other_liab": None,         # Other liabilities
+            "total_liabilities": None,  # Total liabilities
+            # ── Equity ─────────────────────────────────────────────────────────
+            "equity": None,             # Total equity (Eget kapital)
             "book_value_per_share": None,
         }
     ],
