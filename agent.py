@@ -29,7 +29,6 @@ from datetime import datetime, timezone
 import anthropic
 from dotenv import load_dotenv
 
-from pdf_fetcher import get_company_reports
 from tools import (
     get_price_data,
     fetch_reports,
@@ -281,8 +280,8 @@ def analyse_stock(ticker: str, progress_callback=None, force_refresh: bool = Fal
     sector       = price_data["company"]["sector"]
     print(f"      → {company_name}, {price_data['market']['price']} {price_data['market']['currency']}")
 
-    # ── 2. Download PDF reports ───────────────────────────────────────────────
-    _emit(f"Downloading annual & quarterly reports for {company_name}…", 2)
+    # ── 2. Load uploaded PDF reports from Supabase ───────────────────────────
+    _emit("Loading uploaded PDF reports…", 2)
     reports = fetch_reports(ticker)
     annual_text      = (reports.get("annual") or {}).get("text", "")
     quarterly_reports = reports.get("quarterly", [])
