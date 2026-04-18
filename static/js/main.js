@@ -1232,13 +1232,31 @@ if (typeof pdfjsLib !== "undefined") {
 async function extractPdfText(file) {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+  const total = pdf.numPages;
+  const MAX_PAGES = 350;
+
+  // Annual reports bury financial statements in the latter half (often pages 150–334+).
+  // Strategy: extract up to 30 cover pages for context, then prioritise from 40% of
+  // the document onwards, up to MAX_PAGES total pages extracted.
+  const coverEnd  = Math.min(30, total);
+  const bodyStart = Math.max(coverEnd + 1, Math.floor(total * 0.40));
+  const bodyEnd   = Math.min(total, bodyStart + (MAX_PAGES - coverEnd));
+
+  const pageNums = [];
+  for (let i = 1; i <= coverEnd; i++) pageNums.push(i);
+  for (let i = bodyStart; i <= bodyEnd; i++) pageNums.push(i);
+
+  console.log(
+    `[pdf] total=${total} pages | extracting cover 1–${coverEnd}, body ${bodyStart}–${bodyEnd}` +
+    ` (${pageNums.length} pages)`
+  );
+
   const parts = [];
-  const maxPages = Math.min(pdf.numPages, 60);
-  for (let i = 1; i <= maxPages; i++) {
-    const page = await pdf.getPage(i);
+  for (const i of pageNums) {
+    const page    = await pdf.getPage(i);
     const content = await page.getTextContent();
-    const pageText = content.items.map(item => item.str).join(" ");
-    if (pageText.trim()) parts.push(pageText);
+    const text    = content.items.map(item => item.str).join(" ");
+    if (text.trim()) parts.push(text);
   }
   return parts.join("\n\n");
 }
@@ -1287,7 +1305,7 @@ document.getElementById("upload-form").addEventListener("submit", async e => {
   if (!file.name.toLowerCase().endsWith(".pdf")) { showUploadError("File must be a .pdf"); return; }
 
   submitBtn.disabled = true;
-  submitBtn.textContent = "Extracting text…";
+  submitBtn.textContent = "Extracting text (large PDF — please wait)…";
 
   let pdfText;
   try {
