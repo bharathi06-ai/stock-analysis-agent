@@ -522,21 +522,26 @@ def extract_financials_from_reports(
     annual_text: str,
     quarterly_reports: list,
     ticker: str,
+    force_refresh: bool = False,
 ) -> dict:
     """
     Parse PDF report text with Claude and return structured financial data.
 
     annual_text      : extracted text from the annual PDF (up to 35k chars)
     quarterly_reports: list of {period, text} dicts, most recent first
+    force_refresh    : skip /tmp file cache (set True after a new PDF upload)
     Returns          : {profit_loss, balance_sheet, cash_flow, key_ratios, quarters}
 
     Cached for 24 hours (PDFs don't change intra-day).
     """
     # ── Cache check ──
     cache_path = _extract_cache(ticker)
-    cached = _load_cache(cache_path, ttl_hours=24)
-    if cached:
-        return cached
+    if not force_refresh:
+        cached = _load_cache(cache_path, ttl_hours=24)
+        if cached:
+            return cached
+    else:
+        print(f"  [extract] force_refresh=True — skipping /tmp extraction cache")
 
     if not annual_text and not quarterly_reports:
         print("  [extract] No PDF text available — returning empty financials")

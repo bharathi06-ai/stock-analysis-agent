@@ -290,11 +290,13 @@ def analyse_stock(ticker: str, progress_callback=None, force_refresh: bool = Fal
 
     # ── 3. Extract structured financials from PDFs ────────────────────────────
     _emit("Extracting financials from PDF reports…", 3)
+    print(f"      → annual_text={len(annual_text):,} chars, quarterly={len(quarterly_reports)}, force_refresh={force_refresh}")
     pdf_financials = extract_financials_from_reports(
         company=company_name,
         annual_text=annual_text,
         quarterly_reports=quarterly_reports,
         ticker=ticker,
+        force_refresh=force_refresh,
     )
 
     # ── 4. Search recent news ──────────────────────────────────────────────
