@@ -442,11 +442,11 @@ button#analyse-btn:disabled { border-color: #555; color: #666; cursor: not-allow
   line-height: 1.65;
 }
 
-.rec-card.buy  { border-color: var(--green); }
+.rec-card.buy  { background: var(--bg2); border-color: var(--accent); }
 .rec-card.hold { border-color: var(--yellow); }
 .rec-card.sell { border-color: var(--red); }
 
-.rec-card .rec-rating.buy  { color: var(--green); }
+.rec-card .rec-rating.buy  { color: var(--accent2); }
 .rec-card .rec-rating.hold { color: var(--yellow); }
 .rec-card .rec-rating.sell { color: var(--red); }
 
