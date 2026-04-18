@@ -1341,16 +1341,17 @@ document.getElementById("upload-form").addEventListener("submit", async e => {
       return;
     }
 
-    // Show success, then kick off a fresh analysis
-    successEl.textContent = `✦ ${data.message}`;
+    // Show success message and let the user trigger analysis manually
+    successEl.textContent = "✦ PDF uploaded successfully. Click Analyse to run fresh analysis.";
     successEl.classList.remove("hidden");
     document.getElementById("upload-form").classList.add("hidden");
 
-    // Pre-fill the search box and run analysis after a short pause
+    // Pre-fill the search box so the user can click Analyse immediately
     document.getElementById("ticker-input").value = ticker;
-    setTimeout(async () => {
+
+    // Close modal after a pause; reset form for next use
+    setTimeout(() => {
       closeUpload();
-      // Reset form for next use
       setTimeout(() => {
         document.getElementById("upload-form").classList.remove("hidden");
         successEl.classList.add("hidden");
@@ -1358,9 +1359,7 @@ document.getElementById("upload-form").addEventListener("submit", async e => {
         submitBtn.disabled = false;
         submitBtn.textContent = "Upload & Analyse";
       }, 400);
-      // Trigger fresh analysis (nocache=1 bypasses Supabase cache)
-      await runAnalysis(true);
-    }, 2000);
+    }, 3000);
 
   } catch (err) {
     showUploadError("Network error — please try again.");
