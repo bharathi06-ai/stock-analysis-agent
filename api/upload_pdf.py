@@ -13,6 +13,7 @@ Stores in stock_pdf_store, clears analysis cache so the next /api/analyse runs f
 import re
 import sys
 import os
+import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -24,6 +25,14 @@ MIN_TEXT_LEN = 200
 
 def handle_upload():
     """Call this from the Flask route."""
+    try:
+        return _handle_upload_inner()
+    except Exception as e:
+        print(f"[upload] Unhandled exception: {traceback.format_exc()}")
+        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+
+def _handle_upload_inner():
     body = request.get_json(silent=True) or {}
 
     ticker      = (body.get("ticker") or "").strip().upper()
