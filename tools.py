@@ -134,7 +134,7 @@ def _df_val(df, row_key, col):
 
 # ── Cache helpers ─────────────────────────────────────────────────────────────
 
-_CACHE_DIR = os.path.join(os.path.dirname(__file__), ".yf_cache")
+_CACHE_DIR = os.path.join(os.environ.get("CACHE_DIR", "/tmp"), ".yf_cache")
 
 
 def _safe_ticker(ticker: str) -> str:
