@@ -606,6 +606,24 @@ function renderSummary(d) {
 // ── PRICE CHART ───────────────────────────────────────
 function renderPriceChart(d) {
   _chartData = d.chart || {};
+  const hasData = (_chartData.prices || []).length > 0;
+  const priceTab = document.getElementById("tab-price");
+  if (priceTab) {
+    const empty = priceTab.querySelector(".chart-empty-msg") || (() => {
+      const el = document.createElement("p");
+      el.className = "chart-empty-msg";
+      el.style.cssText = "color:var(--text-muted,#888);text-align:center;padding:40px 0;";
+      el.textContent = "Price chart data is not available.";
+      priceTab.appendChild(el);
+      return el;
+    })();
+    empty.style.display = hasData ? "none" : "block";
+    priceTab.querySelector(".chart-header-row").style.display = hasData ? "" : "none";
+    priceTab.querySelector(".chart-wrap.tall").style.display = hasData ? "" : "none";
+    priceTab.querySelector("h3.section-heading[style]").style.display = hasData ? "" : "none";
+    priceTab.querySelector(".chart-wrap.short").style.display = hasData ? "" : "none";
+  }
+  if (!hasData) return;
   // Reset active range button to 1Y
   document.querySelectorAll(".range-btn").forEach(b => {
     b.classList.toggle("active", b.dataset.range === "1Y");

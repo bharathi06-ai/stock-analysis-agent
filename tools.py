@@ -217,32 +217,14 @@ def get_price_data(ticker: str) -> dict:
         price   = quote.get("c")          # current price
         currency = profile.get("currency", "SEK")
 
-        # ── 1-year daily candles (chart) ─────────────────────────────────────
-        now          = int(_time_mod.time())
-        one_year_ago = now - 365 * 24 * 3600
-        candles = _fh("/stock/candle", {
-            "symbol":     fh_ticker,
-            "resolution": "D",
-            "from":       one_year_ago,
-            "to":         now,
-        })
-
         chart_labels, chart_prices, chart_volumes = [], [], []
-        if candles.get("s") == "ok":
-            from datetime import datetime as _dt
-            for ts, c, v in zip(candles.get("t", []),
-                                 candles.get("c", []),
-                                 candles.get("v", [])):
-                chart_labels.append(_dt.utcfromtimestamp(ts).strftime("%Y-%m-%d"))
-                chart_prices.append(_r(c, 2))
-                chart_volumes.append(int(v) if v else 0)
 
         # ── Metrics (52-week range, beta, avg volume) ─────────────────────────
         metrics = _fh("/stock/metric", {"symbol": fh_ticker, "metric": "all"})
         m = metrics.get("metric", {})
 
-        w52_high = m.get("52WeekHigh") or (max(chart_prices) if chart_prices else None)
-        w52_low  = m.get("52WeekLow")  or (min(chart_prices) if chart_prices else None)
+        w52_high = m.get("52WeekHigh")
+        w52_low  = m.get("52WeekLow")
         avg_vol  = m.get("10DayAverageTradingVolume")
         if avg_vol:
             avg_vol = int(avg_vol * 1_000_000)   # Finnhub returns in millions
@@ -282,9 +264,7 @@ def get_price_data(ticker: str) -> dict:
             },
         }
 
-        print(f"  [finnhub] OK — price={price} {currency}, "
-              f"market_cap={market_cap_m} MSEK, "
-              f"chart={len(chart_labels)} pts")
+        print(f"  [finnhub] OK — price={price} {currency}, market_cap={market_cap_m} MSEK")
         _save_cache(_price_cache(ticker), result)
         _mem_set(ticker, result)
         return result
