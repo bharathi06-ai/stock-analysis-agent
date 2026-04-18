@@ -865,6 +865,56 @@ button#analyse-btn:disabled { border-color: #555; color: #666; cursor: not-allow
   transition: width 0.45s ease;
 }
 
+/* ── UPLOAD FAB ────────────────────── */
+.upload-fab {
+  right: 28px;
+  bottom: 78px;   /* sits above the feedback FAB */
+  border-color: var(--accent) !important;
+  color: var(--accent2) !important;
+}
+
+.upload-modal { width: 380px; }
+
+.up-type-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.up-type-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 1px solid var(--border2);
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: var(--text2);
+  transition: border-color 0.15s, color 0.15s;
+  user-select: none;
+}
+
+.up-type-btn:has(input:checked) {
+  border-color: var(--accent);
+  color: var(--accent2);
+  background: rgba(250, 199, 117, 0.07);
+}
+
+.up-type-btn input[type="radio"] { accent-color: var(--accent2); }
+
+.up-error {
+  font-size: 0.8rem;
+  color: var(--red);
+  margin-bottom: 12px;
+  padding: 7px 10px;
+  background: #fff0f0;
+  border-radius: 6px;
+  border: 1px solid #fecaca;
+}
+
 /* ── FEEDBACK FAB ──────────────────── */
 .feedback-fab {
   position: fixed;

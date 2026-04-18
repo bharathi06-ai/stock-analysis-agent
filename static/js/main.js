@@ -274,7 +274,7 @@ document.getElementById("ticker-input").addEventListener("keydown", e => {
   if (e.key === "Enter") runAnalysis();
 });
 
-async function runAnalysis() {
+async function runAnalysis(nocache = false) {
   const ticker = document.getElementById("ticker-input").value.trim().toUpperCase();
   if (!ticker) return;
 
@@ -284,7 +284,8 @@ async function runAnalysis() {
   document.getElementById("dashboard").classList.add("hidden");
 
   try {
-    const resp = await fetch("/api/analyse", {
+    const url  = nocache ? "/api/analyse?nocache=1" : "/api/analyse";
+    const resp = await fetch(url, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ ticker }),
@@ -1216,3 +1217,104 @@ document.getElementById("feedback-form").addEventListener("submit", async e => {
     alert("Couldn't send feedback — please try again.");
   }
 });
+
+// ════════════════════════════════════════════════════════
+//  PDF UPLOAD MODAL
+// ════════════════════════════════════════════════════════
+
+function openUpload() {
+  // Pre-fill ticker from the search box if a stock is loaded
+  const loaded = document.getElementById("ticker-input").value.trim().toUpperCase();
+  const upTicker = document.getElementById("up-ticker");
+  if (loaded && !upTicker.value) upTicker.value = loaded;
+  document.getElementById("upload-overlay").classList.remove("hidden");
+  upTicker.focus();
+}
+
+function closeUpload() {
+  document.getElementById("upload-overlay").classList.add("hidden");
+}
+
+function closeUploadOnOverlay(e) {
+  if (e.target === document.getElementById("upload-overlay")) closeUpload();
+}
+
+// Add Escape key support alongside existing feedback handler
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeUpload();
+}, { capture: false });
+
+document.getElementById("upload-form").addEventListener("submit", async e => {
+  e.preventDefault();
+
+  const ticker     = document.getElementById("up-ticker").value.trim().toUpperCase();
+  const reportType = document.querySelector('input[name="report_type"]:checked')?.value;
+  const period     = document.getElementById("up-period").value.trim();
+  const fileInput  = document.getElementById("up-file");
+  const errorEl    = document.getElementById("up-error");
+  const successEl  = document.getElementById("up-success");
+  const submitBtn  = document.getElementById("up-submit-btn");
+
+  errorEl.classList.add("hidden");
+  errorEl.textContent = "";
+
+  if (!ticker)                           { showUploadError("Ticker is required.");          return; }
+  if (!period)                           { showUploadError("Period is required.");           return; }
+  if (!fileInput.files || !fileInput.files[0]) { showUploadError("Please select a PDF file."); return; }
+
+  const file = fileInput.files[0];
+  if (!file.name.toLowerCase().endsWith(".pdf")) { showUploadError("File must be a .pdf"); return; }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Uploading…";
+
+  try {
+    const formData = new FormData();
+    formData.append("ticker",      ticker);
+    formData.append("report_type", reportType);
+    formData.append("period",      period);
+    formData.append("pdf",         file);
+
+    const res  = await fetch("/api/upload", { method: "POST", body: formData });
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      showUploadError(data.error || `Upload failed (${res.status})`);
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Upload & Analyse";
+      return;
+    }
+
+    // Show success, then kick off a fresh analysis
+    successEl.textContent = `✦ ${data.message}`;
+    successEl.classList.remove("hidden");
+    document.getElementById("upload-form").classList.add("hidden");
+
+    // Pre-fill the search box and run analysis after a short pause
+    document.getElementById("ticker-input").value = ticker;
+    setTimeout(async () => {
+      closeUpload();
+      // Reset form for next use
+      setTimeout(() => {
+        document.getElementById("upload-form").classList.remove("hidden");
+        successEl.classList.add("hidden");
+        document.getElementById("upload-form").reset();
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Upload & Analyse";
+      }, 400);
+      // Trigger fresh analysis (nocache=1 bypasses Supabase cache)
+      await runAnalysis(true);
+    }, 2000);
+
+  } catch (err) {
+    showUploadError("Network error — please try again.");
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Upload & Analyse";
+  }
+});
+
+function showUploadError(msg) {
+  const el = document.getElementById("up-error");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+}

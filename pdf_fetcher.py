@@ -260,81 +260,18 @@ def _extract_text(pdf_bytes: bytes, max_pages: int = 40) -> str:
 
 def get_company_reports(ticker: str) -> dict:
     """
-    Fetch all available reports for a ticker.
-    Returns:
-      { ticker, company, annual, quarterly, summary }
+    Phase C: auto-download disabled — PDFs are uploaded manually via /api/upload.
+    Returns an empty shell so callers don't break; fetch_reports() in tools.py
+    now reads from Supabase (stock_pdf_store) instead of calling this.
     """
     company = ticker_to_name(ticker)
-    print(f"\n{'='*60}")
-    print(f"Fetching reports: {ticker}  ({company})")
-    print(f"{'='*60}")
-
-    # One Claude call to get all URLs
-    urls = find_report_urls(company)
-
-    # ── Annual report ──
-    annual = None
-    for year_key in _annual_year_keys():
-        url = urls.get(year_key)
-        if not url or url == "null":
-            continue
-        year = int(year_key.split("_")[1])
-        print(f"\n  [annual {year}] Downloading: {url}")
-        pdf_bytes = _download_pdf(url)
-        if pdf_bytes:
-            text = _extract_text(pdf_bytes, max_pages=40)
-            if len(text) > 500:
-                print(f"  OK — {len(text):,} chars extracted")
-                annual = {
-                    "type": "annual",
-                    "year": year,
-                    "url": url,
-                    "text": text,
-                    "char_count": len(text),
-                }
-                break
-        print(f"  [annual {year}] download failed or empty")
-
-    # ── Quarterly reports ──
-    quarterly = []
-    for item in urls.get("quarterly", []):
-        url = item.get("url")
-        period = item.get("period", "")
-        if not url or url == "null":
-            print(f"  [quarterly] {period}: no URL found")
-            continue
-        print(f"\n  [quarterly {period}] Downloading: {url}")
-        pdf_bytes = _download_pdf(url)
-        if pdf_bytes:
-            text = _extract_text(pdf_bytes, max_pages=20)
-            if len(text) > 300:
-                print(f"  OK — {len(text):,} chars")
-                quarterly.append({
-                    "type": "quarterly",
-                    "quarter": period,
-                    "url": url,
-                    "text": text,
-                    "char_count": len(text),
-                })
-            else:
-                print(f"  [quarterly {period}] too little text ({len(text)} chars)")
-        else:
-            print(f"  [quarterly {period}] download failed")
-
-    total_chars = (annual["char_count"] if annual else 0) + sum(
-        q["char_count"] for q in quarterly
-    )
-
+    print(f"  [pdf_fetcher] Auto-download disabled — use manual upload for {ticker}")
     return {
-        "ticker": ticker,
-        "company": company,
-        "annual": annual,
-        "quarterly": quarterly,
-        "summary": {
-            "annual_found": annual is not None,
-            "quarterly_found": len(quarterly),
-            "total_chars": total_chars,
-        },
+        "ticker":    ticker,
+        "company":   company,
+        "annual":    None,
+        "quarterly": [],
+        "summary":   {"annual_found": False, "quarterly_found": 0, "total_chars": 0},
     }
 
 

@@ -251,6 +251,51 @@
   </div>
 </div>
 
+<!-- ═══════════════════════ UPLOAD PDF ═══════════════════════ -->
+<button id="upload-btn" class="feedback-fab upload-fab" onclick="openUpload()">✦ Upload PDF</button>
+
+<div id="upload-overlay" class="fb-overlay hidden" onclick="closeUploadOnOverlay(event)">
+  <div class="fb-modal upload-modal" role="dialog" aria-modal="true" aria-labelledby="upload-title">
+
+    <div class="fb-header">
+      <span id="upload-title" class="fb-title">Upload Annual / Quarterly Report</span>
+      <button class="fb-close" onclick="closeUpload()" aria-label="Close">✕</button>
+    </div>
+
+    <form id="upload-form" novalidate>
+      <label class="fb-label" for="up-ticker">Ticker</label>
+      <input id="up-ticker" class="fb-input" type="text"
+             placeholder="e.g. NDA-SE.ST" autocomplete="off" spellcheck="false" required>
+
+      <label class="fb-label">Report Type</label>
+      <div class="up-type-row">
+        <label class="up-type-btn">
+          <input type="radio" name="report_type" value="annual" checked>
+          <span>Annual Report</span>
+        </label>
+        <label class="up-type-btn">
+          <input type="radio" name="report_type" value="quarterly">
+          <span>Quarterly Report</span>
+        </label>
+      </div>
+
+      <label class="fb-label" for="up-period">Period</label>
+      <input id="up-period" class="fb-input" type="text"
+             placeholder="e.g. 2024  or  Q1 2025" autocomplete="off" required>
+
+      <label class="fb-label" for="up-file">PDF File</label>
+      <input id="up-file" class="fb-input" type="file" accept=".pdf" required>
+
+      <div id="up-error" class="up-error hidden"></div>
+
+      <button type="submit" class="fb-submit" id="up-submit-btn">Upload &amp; Analyse</button>
+    </form>
+
+    <div id="up-success" class="fb-success hidden"></div>
+
+  </div>
+</div>
+
 <!-- ═══════════════════════ FEEDBACK ═══════════════════════ -->
 <button id="feedback-btn" class="feedback-fab" onclick="openFeedback()">💬 Feedback</button>
 

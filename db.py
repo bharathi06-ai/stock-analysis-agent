@@ -1,12 +1,20 @@
 """
-db.py — Supabase caching layer for stock analysis results.
+db.py — Supabase caching layer for stock analysis results and PDF store.
 
-Table schema (already exists in Supabase):
+Tables (already exist in Supabase):
     stock_ai_cache (
-        ticker       TEXT PRIMARY KEY,
+        ticker        TEXT PRIMARY KEY,
         analysis_json JSONB,
-        data_hash    TEXT,
-        generated_at TIMESTAMPTZ
+        data_hash     TEXT,
+        generated_at  TIMESTAMPTZ
+    )
+    stock_pdf_store (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        ticker      TEXT NOT NULL,
+        report_type TEXT NOT NULL,   -- 'annual' | 'quarterly'
+        period      TEXT NOT NULL,   -- e.g. '2024', 'Q1 2025'
+        pdf_text    TEXT NOT NULL,
+        uploaded_at TIMESTAMPTZ DEFAULT now()
     )
 
 All functions degrade gracefully: if SUPABASE_URL / SUPABASE_ANON_KEY are
@@ -91,6 +99,119 @@ def save_analysis(ticker: str, data: dict) -> None:
     except Exception as exc:
         print(f"[db] save_analysis error: {exc}")
 
+
+# ── PDF store ─────────────────────────────────────────────────────────────────
+
+def save_pdf_text(ticker: str, report_type: str, period: str, pdf_text: str) -> bool:
+    """
+    Upsert one PDF's extracted text into stock_pdf_store.
+    Matches on (ticker, report_type, period) — re-uploading the same period
+    overwrites the previous text.
+    """
+    client = _get_client()
+    if client is None:
+        return False
+    try:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        # Delete existing row for the same (ticker, report_type, period) first,
+        # then insert — Supabase free tier doesn't support composite upsert easily.
+        client.table("stock_pdf_store") \
+            .delete() \
+            .eq("ticker", ticker) \
+            .eq("report_type", report_type) \
+            .eq("period", period) \
+            .execute()
+        client.table("stock_pdf_store").insert({
+            "ticker":      ticker,
+            "report_type": report_type,
+            "period":      period,
+            "pdf_text":    pdf_text,
+            "uploaded_at": now_iso,
+        }).execute()
+        print(f"[db] Saved {report_type} PDF for {ticker} period={period} ({len(pdf_text):,} chars)")
+        return True
+    except Exception as exc:
+        print(f"[db] save_pdf_text error: {exc}")
+        return False
+
+
+def get_pdf_texts(ticker: str) -> dict:
+    """
+    Fetch all uploaded PDFs for a ticker and return a dict structured
+    identically to what fetch_reports() previously returned, so the
+    rest of the pipeline (extract_financials_from_reports) needs no changes.
+
+    Returns:
+      {
+        "success": bool,
+        "company": str,
+        "annual":  {"year": int, "url": "", "text": str} | None,
+        "quarterly": [{"period": str, "url": "", "text": str}, ...]
+      }
+    """
+    from pdf_fetcher import ticker_to_name
+    company = ticker_to_name(ticker)
+
+    client = _get_client()
+    if client is None:
+        return {"success": False, "company": company, "annual": None, "quarterly": []}
+
+    try:
+        resp = (
+            client.table("stock_pdf_store")
+            .select("report_type, period, pdf_text, uploaded_at")
+            .eq("ticker", ticker)
+            .order("uploaded_at", desc=True)
+            .execute()
+        )
+        rows = resp.data or []
+
+        annual = None
+        quarterly = []
+        seen_periods = set()
+
+        for row in rows:
+            rtype  = row["report_type"]
+            period = row["period"]
+            text   = row["pdf_text"] or ""
+
+            if rtype == "annual" and annual is None:
+                try:
+                    year = int(period)
+                except ValueError:
+                    year = 0
+                annual = {"year": year, "url": "", "text": text}
+
+            elif rtype == "quarterly" and period not in seen_periods and len(quarterly) < 4:
+                quarterly.append({"period": period, "url": "", "text": text})
+                seen_periods.add(period)
+
+        print(f"[db] PDF store for {ticker}: annual={'found' if annual else 'missing'}, "
+              f"quarterly={len(quarterly)}")
+        return {
+            "success":   True,
+            "company":   company,
+            "annual":    annual,
+            "quarterly": quarterly,
+        }
+    except Exception as exc:
+        print(f"[db] get_pdf_texts error: {exc}")
+        return {"success": False, "company": company, "annual": None, "quarterly": []}
+
+
+def clear_analysis_cache(ticker: str) -> None:
+    """Delete cached analysis for a ticker so the next run fetches fresh data."""
+    client = _get_client()
+    if client is None:
+        return
+    try:
+        client.table("stock_ai_cache").delete().eq("ticker", ticker).execute()
+        print(f"[db] Cleared analysis cache for {ticker}")
+    except Exception as exc:
+        print(f"[db] clear_analysis_cache error: {exc}")
+
+
+# ── Analysis cache ─────────────────────────────────────────────────────────────
 
 def is_cache_valid(ticker: str, max_age_hours: int = 24) -> bool:
     client = _get_client()

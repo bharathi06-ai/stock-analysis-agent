@@ -305,40 +305,42 @@ _MAX_QUARTERLY =  8_000   # chars per quarter (was 4_000)
 
 def fetch_reports(ticker: str) -> dict:
     """
-    Fetch annual + quarterly report PDFs and return extracted text.
-    Text limits are generous so extract_financials_from_reports
-    can read full financial tables.
+    Phase C: read manually-uploaded PDF texts from Supabase (stock_pdf_store).
+    Auto-download via pdf_fetcher is disabled — PDFs must be uploaded via /api/upload.
+    Text is truncated to pipeline limits before returning.
     """
-    print(f"  [pdf_fetcher] Fetching reports for {ticker}…")
+    from db import get_pdf_texts
+    print(f"  [pdf_store] Loading uploaded PDFs for {ticker}…")
     try:
-        reports = get_company_reports(ticker)
+        data = get_pdf_texts(ticker)
 
         annual_data = None
-        if reports["annual"]:
+        if data.get("annual"):
+            a = data["annual"]
             annual_data = {
-                "year": reports["annual"]["year"],
-                "url":  reports["annual"]["url"],
-                "text": reports["annual"]["text"][:_MAX_ANNUAL],
+                "year": a["year"],
+                "url":  a["url"],
+                "text": a["text"][:_MAX_ANNUAL],
             }
 
         quarterly_data = []
-        for q in reports["quarterly"]:
+        for q in data.get("quarterly", []):
             quarterly_data.append({
-                "period": q["quarter"],
+                "period": q["period"],
                 "url":    q["url"],
                 "text":   q["text"][:_MAX_QUARTERLY],
             })
 
-        print(f"  [pdf_fetcher] annual={'found' if annual_data else 'missing'}, "
+        print(f"  [pdf_store] annual={'found' if annual_data else 'missing'}, "
               f"quarterly={len(quarterly_data)}")
         return {
-            "success":   True,
-            "company":   reports["company"],
+            "success":   data.get("success", False),
+            "company":   data.get("company", ""),
             "annual":    annual_data,
             "quarterly": quarterly_data,
         }
     except Exception as e:
-        print(f"  [pdf_fetcher] Error: {e}")
+        print(f"  [pdf_store] Error: {e}")
         return {"success": False, "error": str(e), "annual": None, "quarterly": []}
 
 
