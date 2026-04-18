@@ -1222,6 +1222,26 @@ document.getElementById("feedback-form").addEventListener("submit", async e => {
 //  PDF UPLOAD MODAL
 // ════════════════════════════════════════════════════════
 
+// Configure pdf.js worker (CDN must match the main script version)
+if (typeof pdfjsLib !== "undefined") {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}
+
+async function extractPdfText(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+  const parts = [];
+  const maxPages = Math.min(pdf.numPages, 60);
+  for (let i = 1; i <= maxPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map(item => item.str).join(" ");
+    if (pageText.trim()) parts.push(pageText);
+  }
+  return parts.join("\n\n");
+}
+
 function openUpload() {
   // Pre-fill ticker from the search box if a stock is loaded
   const loaded = document.getElementById("ticker-input").value.trim().toUpperCase();
@@ -1266,16 +1286,33 @@ document.getElementById("upload-form").addEventListener("submit", async e => {
   if (!file.name.toLowerCase().endsWith(".pdf")) { showUploadError("File must be a .pdf"); return; }
 
   submitBtn.disabled = true;
+  submitBtn.textContent = "Extracting text…";
+
+  let pdfText;
+  try {
+    pdfText = await extractPdfText(file);
+  } catch (err) {
+    showUploadError("Could not read PDF — is it a scanned/image PDF?");
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Upload & Analyse";
+    return;
+  }
+
+  if (!pdfText || pdfText.trim().length < 200) {
+    showUploadError("Extracted text too short — is this a scanned/image PDF?");
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Upload & Analyse";
+    return;
+  }
+
   submitBtn.textContent = "Uploading…";
 
   try {
-    const formData = new FormData();
-    formData.append("ticker",      ticker);
-    formData.append("report_type", reportType);
-    formData.append("period",      period);
-    formData.append("pdf",         file);
-
-    const res  = await fetch("/api/upload", { method: "POST", body: formData });
+    const res  = await fetch("/api/upload", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ ticker, report_type: reportType, period, pdf_text: pdfText }),
+    });
     const data = await res.json();
 
     if (!res.ok || data.error) {
