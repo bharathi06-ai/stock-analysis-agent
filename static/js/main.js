@@ -529,16 +529,11 @@ function renderHero(d) {
 function renderMetricPills(d) {
   const mkt = d.market  || {};
   const rat = d.ratios  || {};
-  // P/E, P/B, dividend yield, ROE, EPS now come from PDF-extracted ratios
+  // Only show metrics sourced from PDF parsing (no Finnhub paid data)
   const pills = [
-    { label: "Market Cap",    value: fmtCap(mkt.market_cap_m) },
-    { label: "P/E Ratio",     value: fmtPE(rat.pe),  cls: rat.pe != null && rat.pe < 0 ? "red" : "accent" },
-    { label: "P/B Ratio",     value: fmtPE(rat.pb),  cls: "accent" },
-    { label: "Dividend Yield",value: fmtPct(rat.dividend_yield), cls: rat.dividend_yield > 0 ? "green" : "" },
-    { label: "ROE",           value: fmtPct(rat.roe), cls: rat.roe > 10 ? "green" : rat.roe < 0 ? "red" : "" },
-    { label: "EPS",           value: rat.eps != null ? fmt(rat.eps, 2) + " SEK" : "—" },
-    { label: "Beta",          value: mkt.beta != null ? fmt(mkt.beta, 2) : "—" },
-    { label: "Shares Out",    value: mkt.shares_outstanding_m != null ? fmt(mkt.shares_outstanding_m, 0) + "M" : "—" },
+    { label: "Dividend Yield", value: fmtPct(rat.dividend_yield), cls: rat.dividend_yield > 0 ? "green" : "" },
+    { label: "ROE",            value: fmtPct(rat.roe), cls: rat.roe > 10 ? "green" : rat.roe < 0 ? "red" : "" },
+    { label: "EPS",            value: rat.eps != null ? fmt(rat.eps, 2) + " SEK" : "—" },
   ];
 
   const wrap = document.getElementById("metric-pills");
@@ -558,8 +553,15 @@ function renderSummary(d) {
   const co  = d.company || {};
   const rec = d.recommendation || {};
 
-  document.getElementById("company-desc").textContent =
-    co.description || "No company description available.";
+  const descEl = document.getElementById("company-desc");
+  if (co.description) {
+    descEl.textContent = co.description;
+  } else if (d.analysis) {
+    descEl.textContent = d.analysis;
+  } else {
+    descEl.closest(".two-col > div").querySelector("h3").style.display = "none";
+    descEl.style.display = "none";
+  }
 
   const ig = document.getElementById("company-info-grid");
   ig.innerHTML = "";
