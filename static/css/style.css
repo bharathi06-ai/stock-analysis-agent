@@ -865,13 +865,23 @@ button#analyse-btn:disabled { border-color: #555; color: #666; cursor: not-allow
   transition: width 0.45s ease;
 }
 
-/* ── UPLOAD FAB ────────────────────── */
-.upload-fab {
-  right: 28px;
-  bottom: 78px;   /* sits above the feedback FAB */
-  border-color: var(--accent) !important;
-  color: var(--accent2) !important;
+/* ── UPLOAD HEADER BUTTON ──────────── */
+.upload-header-btn {
+  padding: 9px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
 }
+
+.upload-header-btn:hover { background: var(--accent); color: var(--header-bg); }
 
 .upload-modal { width: 380px; }
 

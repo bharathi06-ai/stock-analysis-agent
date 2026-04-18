@@ -30,6 +30,7 @@
           placeholder="e.g. NDA-SE.ST, ERIC-B.ST, VOLV-B.ST"
           autocomplete="off" spellcheck="false">
         <button id="analyse-btn">Analyse</button>
+        <button class="upload-header-btn" onclick="openUpload()">✦ Upload PDF</button>
       </div>
       <div class="chips">
         <span>Try:</span>
@@ -252,8 +253,6 @@
 </div>
 
 <!-- ═══════════════════════ UPLOAD PDF ═══════════════════════ -->
-<button id="upload-btn" class="feedback-fab upload-fab" onclick="openUpload()">✦ Upload PDF</button>
-
 <div id="upload-overlay" class="fb-overlay hidden" onclick="closeUploadOnOverlay(event)">
   <div class="fb-modal upload-modal" role="dialog" aria-modal="true" aria-labelledby="upload-title">
 
