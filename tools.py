@@ -633,12 +633,15 @@ def extract_financials_from_reports(
     """
     # ── Cache check ──
     cache_path = _extract_cache(ticker)
+    print(f"  [extract] cache_path={cache_path} | force_refresh={force_refresh} | exists={os.path.exists(cache_path)}")
     if not force_refresh:
         cached = _load_cache(cache_path, ttl_hours=24)
         if cached:
+            print(f"  [extract] CACHE HIT — returning cached result (delete {cache_path} to re-extract)")
             return cached
+        print(f"  [extract] cache miss — running Claude extraction")
     else:
-        print(f"  [extract] force_refresh=True — skipping /tmp extraction cache")
+        print(f"  [extract] force_refresh=True — skipping /tmp extraction cache, running Claude")
 
     if not annual_text and not quarterly_reports:
         print("  [extract] No PDF text available — returning empty financials")
@@ -681,6 +684,7 @@ Include up to 8 quarters (most recent first).
         )
 
         raw = "".join(getattr(b, "text", "") or "" for b in resp.content).strip()
+        print(f"  [extract] Claude raw output (first 1000 chars):\n{raw[:1000]}")
 
         # Strip markdown fences if present
         if raw.startswith("```"):
@@ -696,6 +700,11 @@ Include up to 8 quarters (most recent first).
         decoder = json.JSONDecoder()
         result, _ = decoder.raw_decode(raw)
         result = _clean_financials(result)
+
+        # Log first profit_loss row to confirm bank fields are populated
+        if result.get("profit_loss"):
+            r0 = result["profit_loss"][0]
+            print(f"  [extract] First P&L row: {json.dumps(r0, ensure_ascii=False)}")
 
         pl_n = len(result.get("profit_loss", []))
         bs_n = len(result.get("balance_sheet", []))
