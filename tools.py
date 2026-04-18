@@ -299,7 +299,8 @@ def get_price_data(ticker: str) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Increased limits so the extraction call gets enough table data
-_MAX_ANNUAL    = 500_000  # chars — SEB financials start page 208; need full document
+_MAX_ANNUAL    = 500_000  # chars stored in Supabase — full document
+_MAX_ANNUAL_PROMPT = 100_000  # chars sent to Claude — smart-selected pages only
 _MAX_QUARTERLY =  20_000  # chars per quarter
 
 
@@ -614,6 +615,62 @@ _EXTRACT_SCHEMA = {
 }
 
 
+_FINANCIAL_KEYWORDS = [
+    # English
+    "income statement", "profit and loss", "balance sheet", "cash flow",
+    "total assets", "total liabilities", "net interest income",
+    "operating profit", "net profit", "earnings per share",
+    "total equity", "shareholders equity",
+    # Swedish
+    "resultaträkning", "balansräkning", "kassaflödesanalys",
+    "räntenetto", "provisionsnetto", "rörelseresultat",
+    "summa tillgångar", "eget kapital", "periodens resultat",
+    "nettoresultat", "nettoomsättning", "rörelseintäkter",
+    "personalkostnader", "av- och nedskrivningar",
+]
+
+
+def _select_financial_pages(text: str, char_budget: int) -> str:
+    """
+    Split the extracted PDF text into page-sized chunks, score each chunk by
+    financial keyword density, then fill the char budget with the highest-scoring
+    pages first — keeping the original page order in the output so table
+    continuations stay coherent.
+
+    Pages are assumed to be separated by double-newlines (as produced by the
+    browser pdf.js extraction).
+    """
+    pages = [p for p in text.split("\n\n") if p.strip()]
+    if not pages:
+        return text[:char_budget]
+
+    kw_lower = [k.lower() for k in _FINANCIAL_KEYWORDS]
+
+    def _score(page: str) -> int:
+        pl = page.lower()
+        return sum(1 for kw in kw_lower if kw in pl)
+
+    scored = sorted(enumerate(pages), key=lambda t: _score(t[1]), reverse=True)
+
+    # Greedily pick highest-scoring pages until budget is full
+    selected_indices = set()
+    used = 0
+    for idx, page in scored:
+        if used + len(page) + 2 > char_budget:
+            continue
+        selected_indices.add(idx)
+        used += len(page) + 2
+        if used >= char_budget:
+            break
+
+    # Reassemble in original page order
+    result = "\n\n".join(pages[i] for i in sorted(selected_indices))
+    hits = sum(1 for i in selected_indices if _score(pages[i]) > 0)
+    print(f"  [extract] smart-select: {len(selected_indices)} pages chosen "
+          f"({hits} with financial keywords), {used:,}/{char_budget:,} chars used")
+    return result
+
+
 def extract_financials_from_reports(
     company: str,
     annual_text: str,
@@ -657,11 +714,12 @@ def extract_financials_from_reports(
 
     # ── Build extraction prompt ──
     schema_str = json.dumps(_EXTRACT_SCHEMA, indent=2, ensure_ascii=False)
+    annual_prompt_text = _select_financial_pages(annual_text, _MAX_ANNUAL_PROMPT)
 
     user_msg = f"""Extract all financial data for {company} from the report text below.
 
 ━━━ ANNUAL REPORT ━━━
-{annual_text[:_MAX_ANNUAL]}
+{annual_prompt_text}
 
 ━━━ QUARTERLY REPORTS ━━━
 {quarterly_text}

@@ -299,6 +299,11 @@ def analyse_stock(ticker: str, progress_callback=None, force_refresh: bool = Fal
         force_refresh=force_refresh,
     )
 
+    # Brief pause after a large extraction call to avoid hitting the rate-limit
+    # window that the extraction just consumed.
+    import time as _time
+    _time.sleep(3)
+
     # ── 4. Search recent news ──────────────────────────────────────────────
     _emit("Searching for recent news…", 4)
     news = search_news(company_name, ticker)
