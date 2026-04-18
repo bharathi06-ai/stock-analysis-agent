@@ -34,6 +34,7 @@ _FINNHUB_BASE = "https://finnhub.io/api/v1"
 # Map yfinance-style tickers (used everywhere in the app) → Finnhub symbols
 _TICKER_MAP: dict[str, str] = {
     "NDA-SE.ST":  "NDA-SE:OMX",
+    "NDA-SE-ST":  "NDA-SE:OMX",   # fallback if dot is lost in transit
     "ERIC-B.ST":  "ERIC-B:OMX",
     "VOLV-B.ST":  "VOLV-B:OMX",
     "SEB-A.ST":   "SEB-A:OMX",

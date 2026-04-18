@@ -239,6 +239,7 @@ def compute_ratios(price_data: dict, pdf_financials: dict) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def analyse_stock(ticker: str, progress_callback=None, force_refresh: bool = False) -> dict:
+    print(f"  [agent-debug] analyse_stock received ticker: {ticker!r}")
     """
     Full stock analysis pipeline.
 

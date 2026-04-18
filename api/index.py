@@ -285,7 +285,10 @@ def demo():
 @app.route("/api/analyse", methods=["POST"])
 def analyse():
     data = request.get_json(silent=True) or {}
-    ticker = (data.get("ticker") or "").strip().upper()
+    raw_ticker = data.get("ticker")
+    print(f"  [request-debug] raw ticker from JSON body: {raw_ticker!r}")
+    ticker = (raw_ticker or "").strip().upper()
+    print(f"  [request-debug] ticker after strip/upper: {ticker!r}")
 
     if not ticker:
         return jsonify({"error": "No ticker provided"}), 400
