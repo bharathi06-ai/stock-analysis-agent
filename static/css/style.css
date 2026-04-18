@@ -1106,9 +1106,12 @@ button#analyse-btn:disabled { border-color: #555; color: #666; cursor: not-allow
 .fin-table tr.fin-major td {
   font-weight: 500;
   color: var(--text);
-  border-top: 2px solid rgba(250, 199, 117, 0.5);
+  border-top: none;
   border-bottom: 1px solid var(--border);
-  background: rgba(250, 199, 117, 0.06);
+  background: none;
+}
+.fin-table tr.fin-major td:first-child {
+  border-left: 2.5px solid var(--accent);
 }
 
 /* ── Delta / change columns */
