@@ -279,6 +279,7 @@ def demo():
 def analyse():
     data = request.get_json(silent=True) or {}
     ticker = (data.get("ticker") or "").strip().upper()
+    nocache = request.args.get("nocache") == "1"
 
     if not ticker:
         return jsonify({"error": "No ticker provided"}), 400
@@ -297,7 +298,8 @@ def analyse():
                    "step": step, "total": total})
 
         try:
-            result = analyse_stock(ticker, progress_callback=on_progress)
+            result = analyse_stock(ticker, progress_callback=on_progress,
+                                   force_refresh=nocache)
             if "error" in result:
                 q.put({"type": "error", "message": result["error"]})
             else:
