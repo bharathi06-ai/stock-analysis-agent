@@ -214,13 +214,27 @@ def get_price_data(ticker: str) -> dict:
         profile = _fh("/stock/profile2", {"symbol": fh_ticker})
 
         # ── Quote (current price) ────────────────────────────────────────────
-        quote   = _fh("/quote", {"symbol": fh_ticker})
-        price   = quote.get("c")          # current price
-        currency = profile.get("currency", "SEK")
-
         print(f"  [finnhub-debug] fh_ticker={fh_ticker!r}")
-        print(f"  [finnhub-debug] profile2 raw={profile}")
-        print(f"  [finnhub-debug] quote raw={quote}")
+        quote = _fh("/quote", {"symbol": fh_ticker})
+        print(f"  [finnhub-debug] quote attempt 1 ({fh_ticker!r}) raw={quote}")
+
+        # If c=0 the symbol wasn't recognised; retry with :OMX suffix
+        if not quote.get("c"):
+            fh_ticker_omx = fh_ticker + ":OMX"
+            quote_omx = _fh("/quote", {"symbol": fh_ticker_omx})
+            print(f"  [finnhub-debug] quote attempt 2 ({fh_ticker_omx!r}) raw={quote_omx}")
+            if quote_omx.get("c"):
+                fh_ticker = fh_ticker_omx
+                quote = quote_omx
+                profile = _fh("/stock/profile2", {"symbol": fh_ticker})
+                print(f"  [finnhub-debug] using fallback ticker {fh_ticker!r}, profile2 raw={profile}")
+            else:
+                print(f"  [finnhub-debug] both attempts returned c=0")
+        else:
+            print(f"  [finnhub-debug] profile2 raw={profile}")
+
+        price   = quote.get("c")
+        currency = profile.get("currency", "SEK")
 
         chart_labels, chart_prices, chart_volumes = [], [], []
 
