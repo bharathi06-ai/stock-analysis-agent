@@ -29,20 +29,38 @@ load_dotenv()
 # ── Company name lookup ───────────────────────────────────────────────────────
 
 KNOWN_COMPANIES = {
+    # ── Banks ────────────────────────────────────────────────────────────────
     "NDA-SE.ST":  "Nordea Bank",
-    "ERIC-B.ST":  "Ericsson",
-    "VOLV-B.ST":  "Volvo Group",
-    "INVE-B.ST":  "Investor AB",
+    "NDA-SE-ST":  "Nordea Bank",
     "SEB-A.ST":   "SEB",
+    "SEB-A-ST":   "SEB",
+    "SEB-C.ST":   "SEB",
     "SWED-A.ST":  "Swedbank",
+    "SWED-A-ST":  "Swedbank",
+    "SHB-A.ST":   "Handelsbanken",
+    "SHB-A-ST":   "Handelsbanken",
+    "SHB-B.ST":   "Handelsbanken",
+    # ── Industrials ───────────────────────────────────────────────────────────
+    "VOLV-B.ST":  "Volvo Group",
+    "VOLV-A.ST":  "Volvo Group",
+    "ERIC-B.ST":  "Ericsson",
+    "ERIC-A.ST":  "Ericsson",
     "ATCO-A.ST":  "Atlas Copco",
-    "HM-B.ST":    "H&M Group",
+    "ATCO-B.ST":  "Atlas Copco",
     "SAND.ST":    "Sandvik",
     "SKF-B.ST":   "SKF",
+    "SKF-A.ST":   "SKF",
     "ALFA.ST":    "Alfa Laval",
-    "AZN.ST":     "AstraZeneca",
-    "BOL.ST":     "Boliden",
     "ASSA-B.ST":  "Assa Abloy",
+    "ASSA-A.ST":  "Assa Abloy",
+    "BOL.ST":     "Boliden",
+    # ── Investment / Conglomerates ────────────────────────────────────────────
+    "INVE-B.ST":  "Investor AB",
+    "INVE-A.ST":  "Investor AB",
+    # ── Consumer / Pharma ─────────────────────────────────────────────────────
+    "HM-B.ST":    "H&M Group",
+    "HM-A.ST":    "H&M Group",
+    "AZN.ST":     "AstraZeneca",
 }
 
 

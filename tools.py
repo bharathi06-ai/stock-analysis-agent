@@ -24,7 +24,7 @@ import anthropic
 import requests
 from dotenv import load_dotenv
 
-from pdf_fetcher import get_company_reports, ticker_to_name
+from pdf_fetcher import get_company_reports, ticker_to_name, KNOWN_COMPANIES
 
 load_dotenv()
 
@@ -255,7 +255,7 @@ def get_price_data(ticker: str) -> dict:
         result = {
             "success": True,
             "company": {
-                "name":        profile.get("name") or ticker_to_name(ticker),
+                "name":        KNOWN_COMPANIES.get(ticker) or profile.get("name") or ticker_to_name(ticker),
                 "ticker":      ticker,
                 "sector":      profile.get("finnhubIndustry", "N/A"),
                 "industry":    profile.get("finnhubIndustry", "N/A"),
