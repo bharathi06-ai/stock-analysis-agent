@@ -220,6 +220,7 @@ def get_price_data(ticker: str) -> dict:
         print(f"  [finnhub-debug] fh_ticker={fh_ticker!r}")
         print(f"  [finnhub-debug] profile2 raw={profile}")
         print(f"  [finnhub-debug] quote raw={quote}")
+        #
 
         chart_labels, chart_prices, chart_volumes = [], [], []
 
