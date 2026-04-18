@@ -364,43 +364,119 @@ RULES:
 3. For quarterly reports: extract the 3-MONTH period figures ONLY — NOT cumulative YTD totals.
    (Look for column headers like "Q1 2025", "Jan–Mar 2025", "Kvartal 1" etc.)
 4. Use null for any field not found. Never invent or estimate numbers.
-5. For banks (Nordea, SEB, Handelsbanken, Swedbank, etc.):
-   - "revenue" = total operating income (Summa rörelseintäkter / Total operating income)
+5. For banks (Nordea, SEB, Handelsbanken, Swedbank, Länsförsäkringar, etc.):
    - "gross_profit" = null (banks don't report this)
-   - "operating_income" = profit before credit losses or pre-tax profit
+   - "operating_income" = profit before loan losses / credit losses (Rörelseresultat före kreditförluster)
+     OR operating profit / profit before tax if that line is absent
 6. Return ONLY valid JSON — no markdown fences, no explanation text.
 
-Swedish financial terminology:
-• Income statement (Resultaträkning):
-  Nettoomsättning / Rörelseintäkter / Summa intäkter = revenue (industrial)
-  Räntenetto (NII) + Provisionsnetto + Övriga intäkter = total income (banks)
-  Bruttoresultat = gross profit
-  Rörelseresultat / EBIT = operating income
-  Periodens/Årets resultat = net income
-  Vinst/Resultat per aktie = EPS (SEK)
-  EBITDA = Rörelseresultat + avskrivningar/amortiseringar
-• Balance sheet (Balansräkning):
-  Summa/Totala tillgångar = total assets
-  Summa skulder / Totala skulder = total liabilities
-  Eget kapital = equity
-  Kassa / Likvida medel = cash
-  Räntebärande skulder / Upplåning = total debt
-  Bokfört värde per aktie = book value per share
-• Cash flow (Kassaflödesanalys):
-  Löpande verksamheten = operating cash flow
-  Investeringsverksamheten = investing cash flow
-  Finansieringsverksamheten = financing cash flow
-  Investeringar i anläggningstillgångar = capex (typically negative)
-• Ratios (Nyckeltal):
-  Avkastning på eget kapital (ROE) = return on equity %
-  Avkastning på tillgångar (ROA) = return on assets %
-  Rörelsemarginal = operating margin %
-  Nettomarginal = net margin %
-  Utdelning per aktie = dividend per share (SEK)
-  Utdelningsandel / Pay-out ratio = payout ratio %
-  Soliditet = equity ratio (NOT the same as debt-to-equity)
-  Skuldsättningsgrad = debt-to-equity ratio
-  Balansomslutning = total assets (for banks)"""
+════════════════════════════════════════════════════════════
+BANK INCOME STATEMENT FIELD MAPPING (critical — read carefully)
+════════════════════════════════════════════════════════════
+Swedish banks use a specific income statement structure. Map each line EXACTLY:
+
+  "nii" (Net interest income):
+      Swedish: "Räntenetto", "Ränte­netto", "Nettoresultat av räntor"
+      English: "Net interest income", "Net interest margin income"
+
+  "fee_income" (Net fee & commission income):
+      Swedish: "Provisionsnetto", "Provisions­netto", "Nettoprovisioner",
+               "Avgifts- och provisionsnetto"
+      English: "Net fee and commission income", "Net commission income",
+               "Fee and commission income net"
+
+  "insurance_result" (Net insurance result):
+      Swedish: "Nettoresultat livförsäkring", "Försäkringsresultat",
+               "Livförsäkringsnetto"
+      English: "Net insurance result", "Life insurance result"
+
+  "fair_value" (Net financial items at fair value / trading):
+      Swedish: "Nettoresultat finansiella poster till verkligt värde",
+               "Nettoresultat av finansiella transaktioner",
+               "Finansnetto", "Handelsresultat", "Övriga rörelseintäkter"
+      English: "Net result financial items at fair value",
+               "Net financial income", "Trading result", "Other income"
+
+  "other_income" (Other operating income not captured above):
+      Swedish: "Övriga rörelseintäkter", "Övriga intäkter"
+      English: "Other operating income", "Other income"
+
+  "revenue" (TOTAL operating income — sum of all income lines above):
+      Swedish: "Summa rörelseintäkter", "Totala rörelseintäkter",
+               "Summa intäkter", "Rörelsens intäkter totalt"
+      English: "Total operating income", "Total income", "Total revenues"
+
+  "staff_costs" (Personnel / staff expenses — store as NEGATIVE MSEK):
+      Swedish: "Personalkostnader", "Personal­kostnader", "Lönekostnader",
+               "Kostnader för anställda"
+      English: "Staff costs", "Personnel expenses", "Employee costs"
+
+  "other_expenses" (Other administrative / operating expenses — NEGATIVE MSEK):
+      Swedish: "Övriga administrationskostnader", "Övriga kostnader",
+               "Administrationskostnader", "Rörelsekostnader"
+      English: "Other administrative expenses", "Other operating expenses",
+               "General and administrative expenses"
+
+  "reg_fees" (Regulatory fees, resolution fund — NEGATIVE MSEK):
+      Swedish: "Avgifter till resolutionsfonden", "Stabilitetsavgift",
+               "Tillsynsavgifter", "Regulatoriska avgifter"
+      English: "Resolution fund fee", "Stability fee", "Regulatory fees",
+               "Supervisory fees"
+
+  "da" (Depreciation & amortisation — NEGATIVE MSEK):
+      Swedish: "Av- och nedskrivningar", "Avskrivningar på materiella och
+               immateriella tillgångar", "Avskrivningar"
+      English: "Depreciation and amortisation", "D&A",
+               "Depreciation of tangible and intangible assets"
+
+  "operating_income" (Operating profit before loan losses):
+      Swedish: "Rörelseresultat", "Rörelseresultat före kreditförluster",
+               "Resultat före kreditförluster och nedskrivningar"
+      English: "Operating profit", "Profit before loan losses",
+               "Result before credit losses"
+
+  "net_income" (Net profit for the period):
+      Swedish: "Periodens resultat", "Årets resultat", "Nettoresultat"
+      English: "Net profit", "Profit for the period", "Net income"
+
+  "eps" (Earnings per share in SEK):
+      Swedish: "Resultat per aktie", "Vinst per aktie"
+      English: "Earnings per share", "EPS"
+
+════════════════════════════════════════════════════════════
+BANK BALANCE SHEET FIELD MAPPING
+════════════════════════════════════════════════════════════
+  "cash":         Kassa och tillgodohavanden hos centralbanker /
+                  Cash and balances at central banks
+  "loans":        Utlåning till allmänheten / Loans to the public /
+                  Loans and advances to customers
+  "investments":  Räntebärande värdepapper / Obligationer /
+                  Interest-bearing securities / Financial investments
+  "other_assets": Övriga tillgångar / Other assets (catch-all remainder)
+  "total_assets": Summa tillgångar / Balansomslutning / Total assets
+
+  "deposits":     In- och upplåning från allmänheten / Deposits from the public /
+                  Due to customers
+  "issued_sec":   Emitterade värdepapper / Upplåning /
+                  Issued securities / Debt securities in issue
+  "total_debt":   Räntebärande skulder totalt / Total interest-bearing liabilities
+  "other_liab":   Övriga skulder / Other liabilities
+  "total_liabilities": Summa skulder / Total liabilities
+
+  "equity":       Eget kapital / Total equity / Shareholders equity
+
+════════════════════════════════════════════════════════════
+NON-BANK (INDUSTRIAL) FIELD MAPPING
+════════════════════════════════════════════════════════════
+  "revenue":          Nettoomsättning / Net sales / Revenue
+  "gross_profit":     Bruttoresultat / Gross profit
+  "operating_income": Rörelseresultat / EBIT / Operating profit
+  "net_income":       Periodens/Årets resultat / Net profit
+  "staff_costs":      Personalkostnader / Personnel costs (NEGATIVE MSEK)
+  "da":               Avskrivningar / D&A (NEGATIVE MSEK)
+
+  Balance sheet follows standard IFRS structure — map loans→null,
+  deposits→null, issued_sec→null for non-banks."""
 
 
 def _empty_financials() -> dict:
