@@ -262,13 +262,16 @@ def analyse_stock(ticker: str, progress_callback=None, force_refresh: bool = Fal
     print(f"{'='*60}")
 
     # ── 0. Supabase cache check ────────────────────────────────────────────────
-    if not force_refresh and is_cache_valid(ticker):
+    cache_valid = is_cache_valid(ticker)
+    print(f"  [cache] force_refresh={force_refresh}, is_cache_valid={cache_valid}")
+    if not force_refresh and cache_valid:
         cached = get_cached_analysis(ticker)
         if cached is not None:
             if progress_callback:
                 progress_callback("Loaded from cache", 6, TOTAL_STEPS)
             print(f"  [cache] Returning cached result for {ticker}")
             return cached
+        print(f"  [cache] cache_valid=True but get_cached_analysis returned None — running fresh")
 
     # ── 1. Live price + chart (yfinance) ─────────────────────────────────────
     _emit("Fetching live price data…", 1)

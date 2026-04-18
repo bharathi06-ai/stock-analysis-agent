@@ -203,12 +203,15 @@ def get_pdf_texts(ticker: str) -> dict:
 
 def clear_analysis_cache(ticker: str) -> None:
     """Delete cached analysis for a ticker so the next run fetches fresh data."""
+    print(f"[db] clear_analysis_cache called for {ticker}")
     client = _get_client()
     if client is None:
+        print(f"[db] clear_analysis_cache: Supabase client is None — cache NOT cleared")
         return
     try:
-        client.table("stock_ai_cache").delete().eq("ticker", ticker).execute()
-        print(f"[db] Cleared analysis cache for {ticker}")
+        resp = client.table("stock_ai_cache").delete().eq("ticker", ticker).execute()
+        deleted = len(resp.data) if resp.data else 0
+        print(f"[db] clear_analysis_cache: deleted {deleted} row(s) for {ticker}")
     except Exception as exc:
         print(f"[db] clear_analysis_cache error: {exc}")
 
@@ -218,6 +221,7 @@ def clear_analysis_cache(ticker: str) -> None:
 def is_cache_valid(ticker: str, max_age_hours: int = 24) -> bool:
     client = _get_client()
     if client is None:
+        print(f"[db] is_cache_valid: Supabase client is None — returning False")
         return False
 
     try:
