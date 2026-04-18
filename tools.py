@@ -217,6 +217,10 @@ def get_price_data(ticker: str) -> dict:
         price   = quote.get("c")          # current price
         currency = profile.get("currency", "SEK")
 
+        print(f"  [finnhub-debug] fh_ticker={fh_ticker!r}")
+        print(f"  [finnhub-debug] profile2 raw={profile}")
+        print(f"  [finnhub-debug] quote raw={quote}")
+
         chart_labels, chart_prices, chart_volumes = [], [], []
 
         # ── Metrics (52-week range, beta, avg volume) ─────────────────────────
