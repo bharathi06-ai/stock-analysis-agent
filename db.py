@@ -93,6 +93,7 @@ def save_analysis(ticker: str, data: dict) -> None:
 
 
 def is_cache_valid(ticker: str, max_age_days: int = 90) -> bool:
+    return False  # temporarily disabled to force fresh data
     client = _get_client()
     if client is None:
         return False
