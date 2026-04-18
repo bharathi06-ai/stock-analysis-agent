@@ -299,9 +299,9 @@ def get_price_data(ticker: str) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Increased limits so the extraction call gets enough table data
-_MAX_ANNUAL    = 500_000  # chars stored in Supabase — full document
-_MAX_ANNUAL_PROMPT = 100_000  # chars sent to Claude — smart-selected pages only
-_MAX_QUARTERLY =  20_000  # chars per quarter
+_MAX_ANNUAL        = 500_000  # chars stored in Supabase — full document
+_MAX_ANNUAL_PROMPT =  80_000  # chars sent to Claude — anchored to financial section
+_MAX_QUARTERLY     =  20_000  # chars per quarter
 
 
 def fetch_reports(ticker: str) -> dict:
@@ -615,60 +615,52 @@ _EXTRACT_SCHEMA = {
 }
 
 
-_FINANCIAL_KEYWORDS = [
+# Ordered by specificity — first match wins as the anchor point.
+_FINANCIAL_SECTION_ANCHORS = [
+    # Swedish — most specific first
+    "resultaträkning",
+    "balansräkning",
+    "kassaflödesanalys",
+    "räntenetto",
+    "provisionsnetto",
+    "summa rörelseintäkter",
+    "rörelseintäkter",
+    "nettoomsättning",
     # English
-    "income statement", "profit and loss", "balance sheet", "cash flow",
-    "total assets", "total liabilities", "net interest income",
-    "operating profit", "net profit", "earnings per share",
-    "total equity", "shareholders equity",
-    # Swedish
-    "resultaträkning", "balansräkning", "kassaflödesanalys",
-    "räntenetto", "provisionsnetto", "rörelseresultat",
-    "summa tillgångar", "eget kapital", "periodens resultat",
-    "nettoresultat", "nettoomsättning", "rörelseintäkter",
-    "personalkostnader", "av- och nedskrivningar",
+    "income statement",
+    "profit and loss",
+    "net interest income",
+    "balance sheet",
+    "cash flow statement",
+    "total operating income",
 ]
 
 
 def _select_financial_pages(text: str, char_budget: int) -> str:
     """
-    Split the extracted PDF text into page-sized chunks, score each chunk by
-    financial keyword density, then fill the char budget with the highest-scoring
-    pages first — keeping the original page order in the output so table
-    continuations stay coherent.
-
-    Pages are assumed to be separated by double-newlines (as produced by the
-    browser pdf.js extraction).
+    Find the earliest occurrence of a financial-section keyword in the full
+    document text, then return char_budget characters starting from that
+    position. Falls back to the last (char_budget) chars of the document when
+    no keyword is found (financials are usually at the end of annual reports).
     """
-    pages = [p for p in text.split("\n\n") if p.strip()]
-    if not pages:
-        return text[:char_budget]
+    lower = text.lower()
+    anchor = len(text)  # default: no match found
 
-    kw_lower = [k.lower() for k in _FINANCIAL_KEYWORDS]
+    for kw in _FINANCIAL_SECTION_ANCHORS:
+        pos = lower.find(kw)
+        if pos != -1 and pos < anchor:
+            anchor = pos
+            print(f"  [extract] financial section anchor: {kw!r} at char {pos:,}")
+            break  # first (earliest) match in priority order is enough
 
-    def _score(page: str) -> int:
-        pl = page.lower()
-        return sum(1 for kw in kw_lower if kw in pl)
+    if anchor == len(text):
+        # No keyword found — take the last chunk (financials live at the end)
+        print(f"  [extract] no anchor found — using last {char_budget:,} chars")
+        return text[-char_budget:]
 
-    scored = sorted(enumerate(pages), key=lambda t: _score(t[1]), reverse=True)
-
-    # Greedily pick highest-scoring pages until budget is full
-    selected_indices = set()
-    used = 0
-    for idx, page in scored:
-        if used + len(page) + 2 > char_budget:
-            continue
-        selected_indices.add(idx)
-        used += len(page) + 2
-        if used >= char_budget:
-            break
-
-    # Reassemble in original page order
-    result = "\n\n".join(pages[i] for i in sorted(selected_indices))
-    hits = sum(1 for i in selected_indices if _score(pages[i]) > 0)
-    print(f"  [extract] smart-select: {len(selected_indices)} pages chosen "
-          f"({hits} with financial keywords), {used:,}/{char_budget:,} chars used")
-    return result
+    selected = text[anchor: anchor + char_budget]
+    print(f"  [extract] extracted {len(selected):,} chars from position {anchor:,}")
+    return selected
 
 
 def extract_financials_from_reports(

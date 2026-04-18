@@ -299,21 +299,23 @@ def analyse_stock(ticker: str, progress_callback=None, force_refresh: bool = Fal
         force_refresh=force_refresh,
     )
 
-    # Brief pause after a large extraction call to avoid hitting the rate-limit
-    # window that the extraction just consumed.
+    # 5-second pauses between each Claude call so consecutive requests don't
+    # exhaust the per-minute token rate limit.
     import time as _time
-    _time.sleep(3)
 
+    _time.sleep(5)
     # ── 4. Search recent news ──────────────────────────────────────────────
     _emit("Searching for recent news…", 4)
     news = search_news(company_name, ticker)
     print(f"      → {len(news)} news items")
 
+    _time.sleep(5)
     # ── 5. Find peer companies ────────────────────────────────────────────────
     _emit("Finding peer companies…", 5)
     peers = find_peers(company_name, sector, ticker)
     print(f"      → {len(peers)} peers")
 
+    _time.sleep(5)
     # ── 6. Generate investment analysis ───────────────────────────────────────
     _emit("Generating AI investment analysis…", 6)
     analysis_output = generate_analysis(
