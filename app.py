@@ -137,6 +137,7 @@ def demo():
         "balance_sheet": bs,
         "cash_flow":     cf,
         "quarters":      quarters,
+        "currency_unit": "EURm",
         "ratios": {
             # Valuation multiples: PDF earnings + live price (131.50 SEK)
             # EPS ~14.6 SEK → P/E ~9x; book value ~77 SEK → P/B ~1.7x
@@ -154,9 +155,9 @@ def demo():
         },
         "data_sources": {
             "price_chart":  "Yahoo Finance — live",
-            "financials":   "Company Annual Reports (PDF)",
-            "quarters":     "Company Quarterly Reports (PDF)",
-            "ratios":       "Annual Report (PDF) + live price",
+            "financials":   "Nordea_Annual_Report_2024.pdf",
+            "quarters":     "Nordea_Annual_Report_2024.pdf",
+            "ratios":       "Nordea_Annual_Report_2024.pdf + live price",
             "news":         "Claude AI web search",
             "peers":        "Claude AI web search",
             "analysis":     "Claude AI",

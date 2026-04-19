@@ -381,12 +381,18 @@ def fetch_reports(ticker: str) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 _EXTRACT_SYSTEM = """\
-You are a financial statement parser specialising in Nordic bank annual reports.
+You are a financial statement parser specialising in Nordic company annual reports.
 Extract figures from PDF text and return structured JSON only.
 
 RULES
-1. ALL monetary values in MSEK (millions of Swedish kronor).
-   MEUR → multiply by 11.5 | BEUR → multiply by 11 500 | BSEK → multiply by 1 000 | KSEK → divide by 1 000
+1. Extract monetary values in the EXACT unit used in the report — do NOT convert currencies.
+   Detect the reporting currency unit from the document and set "currency_unit" accordingly:
+     • SEKm  — millions of Swedish kronor  (Sv: MSEK / mkr)
+     • EURm  — millions of euros           (e.g. Nordea, Assa Abloy international reports)
+     • DKKm  — millions of Danish krone    (Sv: MDKK)
+     • NOKm  — millions of Norwegian krone (Sv: MNOK)
+   If the report uses billions (e.g. BSEKbn, EURbn), scale to millions (×1 000) for all fields.
+   If the report uses thousands (e.g. KSEK, TEUR), scale to millions (÷1 000) for all fields.
 2. Extract up to 5 fiscal years (most recent first) for profit_loss / balance_sheet / cash_flow / key_figures.
 3. Quarterly reports: extract 3-MONTH figures ONLY — never cumulative YTD.
 4. Use null for any field not found. Never invent or estimate.
@@ -525,7 +531,7 @@ KEY FIGURES — field mapping (per year; ratios as %, amounts as MSEK unless not
 
 def _empty_financials() -> dict:
     return {
-        "currency_unit": "MSEK",
+        "currency_unit": "SEKm",
         "profit_loss":   [],
         "balance_sheet": [],
         "cash_flow":     [],
@@ -574,7 +580,7 @@ def _clean_financials(data: dict) -> dict:
 
 # JSON schema template sent to Claude in the extraction prompt
 _EXTRACT_SCHEMA = {
-    "currency_unit": "MSEK",
+    "currency_unit": "DETECT",
     "profit_loss": [
         {
             "year": 2024,

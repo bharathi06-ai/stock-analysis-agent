@@ -175,11 +175,12 @@ def compute_ratios(price_data: dict, pdf_financials: dict) -> dict:
     """
     Build the ratios dict for the dashboard metric pills.
     Valuation multiples (P/E, P/B, P/S) use PDF data + live price.
-    All other ratios come from key_figures (PDF extraction).
+    Per-share data and income statement values from PDF may be in EURm/DKKm/NOKm —
+    convert to SEK when computing price-based ratios.
     """
     mkt          = price_data["market"]
     price        = mkt.get("price")
-    market_cap_m = mkt.get("market_cap_m")
+    market_cap_m = mkt.get("market_cap_m")  # always in MSEK (price × shares)
 
     pl = pdf_financials.get("profit_loss", [])
     bs = pdf_financials.get("balance_sheet", [])
@@ -189,21 +190,35 @@ def compute_ratios(price_data: dict, pdf_financials: dict) -> dict:
     latest_bs = bs[0] if bs else {}
     latest_kf = kf[0] if kf else {}
 
-    eps       = latest_kf.get("diluted_eps") or latest_kf.get("basic_eps")
-    revenue_m = latest_pl.get("revenue")
+    # FX rate: convert PDF currency amounts → SEK for cross-currency ratio math
+    currency_unit = pdf_financials.get("currency_unit", "SEKm")
+    _FX_TO_SEK = {"SEKm": 1.0, "EURm": 11.5, "DKKm": 1.55, "NOKm": 1.05}
+    fx = _FX_TO_SEK.get(currency_unit, 1.0)
+
+    # Per-share values from PDF (in reporting currency) → convert to SEK for ratios
+    eps_pdf  = latest_kf.get("diluted_eps") or latest_kf.get("basic_eps")
+    eps_sek  = _r(eps_pdf * fx, 2) if eps_pdf else None
+
+    bvps_pdf = latest_kf.get("equity_per_share")
+    bvps_sek = _r(bvps_pdf * fx, 2) if bvps_pdf else None
+
+    dps_pdf  = latest_kf.get("dividend_per_share")
+    dps_sek  = _r(dps_pdf * fx, 2) if dps_pdf else None
+
+    # If equity_per_share not in key_figures, derive it (in SEK)
     equity_m  = latest_bs.get("equity")
-    bvps      = latest_kf.get("equity_per_share")
     shares_m  = latest_kf.get("shares_outstanding_m")
+    if not bvps_sek and equity_m and shares_m and shares_m > 0:
+        equity_sek_m = equity_m * fx
+        bvps_sek = _r(equity_sek_m / shares_m, 2)
 
-    if not bvps and equity_m and shares_m and shares_m > 0:
-        bvps = _r(equity_m / shares_m, 2)
+    revenue_m_sek = _r((latest_pl.get("revenue") or 0) * fx, 0) or None
 
-    pe = _r(price / eps,             2) if price and eps       and eps       > 0 else None
-    pb = _r(price / bvps,            2) if price and bvps      and bvps      > 0 else None
-    ps = _r(market_cap_m / revenue_m, 2) if market_cap_m and revenue_m and revenue_m > 0 else None
+    pe = _r(price / eps_sek,              2) if price and eps_sek      and eps_sek  > 0 else None
+    pb = _r(price / bvps_sek,             2) if price and bvps_sek     and bvps_sek > 0 else None
+    ps = _r(market_cap_m / revenue_m_sek, 2) if market_cap_m and revenue_m_sek and revenue_m_sek > 0 else None
 
-    dps       = latest_kf.get("dividend_per_share")
-    div_yield = _r(dps / price * 100, 2) if dps and price and price > 0 else None
+    div_yield = _r(dps_sek / price * 100, 2) if dps_sek and price and price > 0 else None
 
     return {
         "pe":               pe,
@@ -219,8 +234,8 @@ def compute_ratios(price_data: dict, pdf_financials: dict) -> dict:
         "debt_to_equity":   None,
         "payout_ratio":     None,
         "dividend_yield":   div_yield,
-        "dividend_per_share": dps,
-        "eps":              eps,
+        "dividend_per_share": dps_pdf,   # in PDF currency (for display)
+        "eps":              eps_pdf,      # in PDF currency (for display)
         "beta":             mkt.get("beta"),
         "cet1_ratio":       latest_kf.get("cet1_ratio_pct"),
         "cost_to_income":   latest_kf.get("cost_to_income_pct"),
@@ -330,6 +345,12 @@ def analyse_stock(ticker: str, progress_callback=None, force_refresh: bool = Fal
     ratios = compute_ratios(price_data, pdf_financials)
 
     # ── 8. Assemble dashboard payload ─────────────────────────────────────────
+    currency_unit = pdf_financials.get("currency_unit", "SEKm")
+
+    # Fetch the uploaded PDF filename for provenance display
+    from db import get_pdf_filename
+    pdf_filename = get_pdf_filename(ticker) or f"Annual Report {cache_period} (PDF)"
+
     dashboard = {
         # Company meta (yfinance .info)
         "company": price_data["company"],
@@ -345,6 +366,8 @@ def analyse_stock(ticker: str, progress_callback=None, force_refresh: bool = Fal
         "cash_flow":     pdf_financials.get("cash_flow", []),
         "key_figures":   pdf_financials.get("key_figures", []),
         "quarters":      pdf_financials.get("quarters", []),
+        # Reporting currency detected from PDF (e.g. "SEKm", "EURm", "DKKm", "NOKm")
+        "currency_unit": currency_unit,
         # Ratios: margins/ROE/ROA from PDF; P/E, P/B, P/S computed from PDF + price
         "ratios":  ratios,
         # AI-generated (Claude)
@@ -360,9 +383,9 @@ def analyse_stock(ticker: str, progress_callback=None, force_refresh: bool = Fal
         # Data provenance
         "data_sources": {
             "price_chart":  "Yahoo Finance — live",
-            "financials":   "Company Annual Reports (PDF)",
-            "quarters":     "Company Quarterly Reports (PDF)",
-            "ratios":       "Annual Report (PDF) + live price",
+            "financials":   pdf_filename,
+            "quarters":     pdf_filename,
+            "ratios":       f"{pdf_filename} + live price",
             "news":         "Claude AI web search",
             "peers":        "Claude AI web search",
             "analysis":     "Claude AI",

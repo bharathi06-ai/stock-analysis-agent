@@ -41,8 +41,10 @@ def _handle_upload_inner():
     report_type = (body.get("report_type") or "").strip().lower()
     period      = (body.get("period") or "").strip()
     pdf_text    = (body.get("pdf_text") or "").strip()
+    filename    = (body.get("filename") or "").strip()
 
-    print(f"[upload] ticker={ticker!r} report_type={report_type!r} period={period!r} pdf_text_len={len(pdf_text)}")
+    print(f"[upload] ticker={ticker!r} report_type={report_type!r} period={period!r} "
+          f"filename={filename!r} pdf_text_len={len(pdf_text)}")
 
     if not ticker or not TICKER_RE.match(ticker):
         return jsonify({"error": "Invalid or missing ticker"}), 400
@@ -63,7 +65,7 @@ def _handle_upload_inner():
 
     print(f"[upload] calling save_pdf_text for {ticker}")
     try:
-        saved = save_pdf_text(ticker, report_type, period, pdf_text)
+        saved = save_pdf_text(ticker, report_type, period, pdf_text, filename)
     except Exception as exc:
         tb = traceback.format_exc()
         print(f"[upload] save_pdf_text raised:\n{tb}")

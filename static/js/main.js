@@ -5,6 +5,14 @@
 
 "use strict";
 
+// ── Currency unit (set from dashboard payload on each render) ─────────────
+// Reflects the reporting currency detected from the uploaded PDF.
+// e.g. "SEKm", "EURm", "DKKm", "NOKm"
+let _currencyUnit = "SEKm";
+
+// Derive the 3-letter currency code from the unit string (strip trailing "m")
+function _baseCcy() { return _currencyUnit.replace(/m$/i, ""); }
+
 // ── Helpers ──────────────────────────────────────────
 function fmt(v, decimals = 2, suffix = "") {
   if (v == null || v === "" || isNaN(v)) return "—";
@@ -14,7 +22,7 @@ function fmt(v, decimals = 2, suffix = "") {
   }) + suffix;
 }
 
-function fmtM(v)   { return v == null ? "—" : fmt(v, 0) + " MSEK"; }
+function fmtM(v)   { return v == null ? "—" : fmt(v, 0) + " " + _currencyUnit; }
 function fmtPct(v) { return v == null ? "—" : fmt(v, 2) + "%"; }
 function fmtPE(v)  { return v == null ? "—" : fmt(v, 1) + "x"; }
 
@@ -193,9 +201,9 @@ async function runAnalysis(nocache = false) {
 //  FINANCIAL TABLE HELPERS
 // ════════════════════════════════════════════════════════
 
-const EUR_SEK = 11.5;
-function toE(msek) { return msek == null ? null : msek / EUR_SEK; }
-function fmtE(v)   { return v == null ? "—" : fmt(v, 0); }
+// PDF values are already in native currency — no conversion needed.
+function toE(v) { return v; }
+function fmtE(v) { return v == null ? "—" : fmt(v, 0); }
 
 function yoyPct(curr, prev) {
   if (curr == null || prev == null || prev === 0) return null;
@@ -242,9 +250,9 @@ function buildFinTable(rows, years, { showDelta = false, showYoY = true, showCag
   const total = 1 + years.length + extra;
 
   let h = '<div class="fin-table-wrap"><table class="fin-table"><thead><tr>';
-  h += '<th>EURm</th>';
+  h += `<th>${_currencyUnit}</th>`;
   years.forEach(y => { h += `<th>${y}</th>`; });
-  if (showDelta) h += '<th>Δ EURm</th>';
+  if (showDelta) h += `<th>Δ ${_currencyUnit}</th>`;
   if (showYoY)   h += '<th>YoY %</th>';
   if (showCagr)  h += '<th>5Y CAGR</th>';
   h += '</tr></thead><tbody>';
@@ -297,6 +305,9 @@ function ratioSection(title, rows) {
 //  RENDER DASHBOARD
 // ════════════════════════════════════════════════════════
 function renderDashboard(d) {
+  // Set module-level currency unit so all table renderers use the correct label
+  _currencyUnit = d.currency_unit || "SEKm";
+
   renderHero(d);
   renderMetricPills(d);
   renderSummary(d);
@@ -314,12 +325,20 @@ function renderDashboard(d) {
 
 // ── SOURCE CHIPS ──────────────────────────────────────
 function renderSourceChips(d) {
-  const src = d.data_sources || {};
+  const src    = d.data_sources || {};
+  const ticker = (d.ticker || "").toUpperCase();
+
+  // Use the PDF filename stored in sessionStorage during upload if available,
+  // then fall back to whatever the backend put in data_sources.financials.
+  const storedFile = sessionStorage.getItem("pdf_filename_" + ticker);
+  const finLabel   = storedFile || src.financials || "Company Annual Reports (PDF)";
+  const qLabel     = storedFile || src.quarters   || "Company Quarterly Reports (PDF)";
+
   const map = {
-    "income-source-chip":   { icon: "📄", text: src.financials },
-    "bs-source-chip":       { icon: "📄", text: src.financials },
-    "cf-source-chip":       { icon: "📄", text: src.financials },
-    "qoq-source-chip":      { icon: "📄", text: src.quarters },
+    "income-source-chip":   { icon: "📄", text: finLabel },
+    "bs-source-chip":       { icon: "📄", text: finLabel },
+    "cf-source-chip":       { icon: "📄", text: finLabel },
+    "qoq-source-chip":      { icon: "📄", text: qLabel },
     "analysis-source-chip": { icon: "🤖", text: src.analysis },
   };
   Object.entries(map).forEach(([id, { icon, text }]) => {
@@ -374,7 +393,7 @@ function renderMetricPills(d) {
   const pills = [
     { label: "Dividend Yield", value: fmtPct(rat.dividend_yield), cls: rat.dividend_yield > 0 ? "green" : "" },
     { label: "ROE",            value: fmtPct(rat.roe), cls: rat.roe > 10 ? "green" : rat.roe < 0 ? "red" : "" },
-    { label: "EPS",            value: rat.eps != null ? fmt(rat.eps, 2) + " SEK" : "—" },
+    { label: "EPS",            value: rat.eps != null ? fmt(rat.eps, 2) + " " + _baseCcy() : "—" },
   ];
 
   const wrap = document.getElementById("metric-pills");
@@ -393,25 +412,29 @@ function renderMetricPills(d) {
 function renderSummary(d) {
   const co  = d.company || {};
   const rec = d.recommendation || {};
+  const rat = d.ratios  || {};
 
   // Financial highlights strip
   const pl0 = (d.profit_loss   || []).sort((a, b) => b.year - a.year)[0] || {};
   const bs0 = (d.balance_sheet || []).sort((a, b) => b.year - a.year)[0] || {};
   const kf0 = (d.key_figures   || []).sort((a, b) => b.year - a.year)[0] || {};
   const hlWrap = document.getElementById("summary-highlights");
+  // Fallback to d.ratios for values that may not be in key_figures
+  const ccy = _currencyUnit;
   const hlItems = [
-    { label: "Net Interest Income", raw: pl0.nii,               fmt: v => fmtE(toE(v)) + " EURm" },
-    { label: "Total Income",        raw: pl0.revenue,           fmt: v => fmtE(toE(v)) + " EURm" },
-    { label: "Operating Profit",    raw: pl0.operating_profit,  fmt: v => fmtE(toE(v)) + " EURm" },
-    { label: "Net Profit",          raw: pl0.net_income,        fmt: v => fmtE(toE(v)) + " EURm" },
-    { label: "Total Assets",        raw: bs0.total_assets,      fmt: v => fmtE(toE(v)) + " EURm" },
-    { label: "Total Equity",        raw: bs0.equity,            fmt: v => fmtE(toE(v)) + " EURm" },
-    { label: "CET1 Ratio",          raw: kf0.cet1_ratio_pct,    fmt: v => fmt(v, 1) + "%" },
-    { label: "Cost / Income",       raw: kf0.cost_to_income_pct,fmt: v => fmt(v, 1) + "%" },
-    { label: "ROE",                 raw: kf0.roe_pct,           fmt: v => fmt(v, 1) + "%" },
-    { label: "Diluted EPS",         raw: kf0.diluted_eps,       fmt: v => fmt(v, 2) + " SEK" },
-    { label: "Dividend / Share",    raw: kf0.dividend_per_share,fmt: v => fmt(v, 2) + " SEK" },
-    { label: "AuM",                 raw: kf0.aum_bn,            fmt: v => fmt(v, 0) + " bn SEK" },
+    { label: "Net Interest Income", raw: pl0.nii,               fmt: v => fmtE(v) + " " + ccy },
+    { label: "Total Income",        raw: pl0.revenue,           fmt: v => fmtE(v) + " " + ccy },
+    { label: "Operating Profit",    raw: pl0.operating_profit,  fmt: v => fmtE(v) + " " + ccy },
+    { label: "Net Profit",          raw: pl0.net_income,        fmt: v => fmtE(v) + " " + ccy },
+    { label: "Total Assets",        raw: bs0.total_assets,      fmt: v => fmtE(v) + " " + ccy },
+    { label: "Total Equity",        raw: bs0.equity,            fmt: v => fmtE(v) + " " + ccy },
+    { label: "CET1 Ratio",          raw: kf0.cet1_ratio_pct,                     fmt: v => fmt(v, 1) + "%" },
+    { label: "Cost / Income",       raw: kf0.cost_to_income_pct,                 fmt: v => fmt(v, 1) + "%" },
+    { label: "ROE",                 raw: kf0.roe_pct           ?? rat.roe,       fmt: v => fmt(v, 1) + "%" },
+    { label: "Diluted EPS",         raw: kf0.diluted_eps       ?? rat.eps,       fmt: v => fmt(v, 2) + " " + _baseCcy() },
+    { label: "Dividend / Share",    raw: kf0.dividend_per_share ?? rat.dividend_per_share, fmt: v => fmt(v, 2) + " " + _baseCcy() },
+    { label: "Dividend Yield",      raw: rat.dividend_yield,                     fmt: v => fmt(v, 2) + "%" },
+    { label: "AuM",                 raw: kf0.aum_bn,                             fmt: v => fmt(v, 0) + " bn " + _baseCcy() },
   ].filter(x => x.raw != null);
 
   if (hlItems.length) {
@@ -626,25 +649,25 @@ function renderRatiosAndKeyFigures(d) {
 
   wrap.innerHTML =
     buildKfTable("Per Share Data", [
-      { label: "Basic EPS",            key: "basic_eps",            fmt: v => fmt(v, 2) + " SEK" },
-      { label: "Diluted EPS",          key: "diluted_eps",          fmt: v => fmt(v, 2) + " SEK" },
-      { label: "Dividend per share",   key: "dividend_per_share",   fmt: v => fmt(v, 2) + " SEK" },
-      { label: "Equity per share",     key: "equity_per_share",     fmt: v => fmt(v, 2) + " SEK" },
-      { label: "Share price",          key: "share_price",          fmt: v => fmt(v, 2) + " SEK" },
+      { label: "Basic EPS",            key: "basic_eps",            fmt: v => fmt(v, 2) + " " + _baseCcy() },
+      { label: "Diluted EPS",          key: "diluted_eps",          fmt: v => fmt(v, 2) + " " + _baseCcy() },
+      { label: "Dividend per share",   key: "dividend_per_share",   fmt: v => fmt(v, 2) + " " + _baseCcy() },
+      { label: "Equity per share",     key: "equity_per_share",     fmt: v => fmt(v, 2) + " " + _baseCcy() },
+      { label: "Share price",          key: "share_price",          fmt: v => fmt(v, 2) + " " + _baseCcy() },
       { label: "Shares outstanding",   key: "shares_outstanding_m", fmt: v => fmt(v, 0) + " m" },
     ]) +
     buildKfTable("Performance", [
       { label: "Return on Equity (ROE)",    key: "roe_pct",                fmt: v => fmt(v, 1) + "%" },
       { label: "Cost / Income",             key: "cost_to_income_pct",     fmt: v => fmt(v, 1) + "%" },
       { label: "Net loan loss ratio",       key: "net_loan_loss_ratio_pct",fmt: v => fmt(v, 2) + "%" },
-      { label: "Assets under Management",  key: "aum_bn",                 fmt: v => fmt(v, 0) + " bn SEK" },
+      { label: "Assets under Management",  key: "aum_bn",                 fmt: v => fmt(v, 0) + " bn " + _baseCcy() },
     ]) +
     buildKfTable("Capital Adequacy", [
       { label: "CET1 Ratio",            key: "cet1_ratio_pct",         fmt: v => fmt(v, 1) + "%" },
       { label: "Tier 1 Ratio",          key: "tier1_ratio_pct",        fmt: v => fmt(v, 1) + "%" },
       { label: "Total Capital Ratio",   key: "total_capital_ratio_pct",fmt: v => fmt(v, 1) + "%" },
-      { label: "Tier 1 Capital",        key: "tier1_capital",          fmt: v => fmtE(toE(v)) + " EURm" },
-      { label: "Risk-weighted Assets",  key: "rea",                    fmt: v => fmtE(toE(v)) + " EURm" },
+      { label: "Tier 1 Capital",        key: "tier1_capital",          fmt: v => fmtE(v) + " " + _currencyUnit },
+      { label: "Risk-weighted Assets",  key: "rea",                    fmt: v => fmtE(v) + " " + _currencyUnit },
       { label: "Employees",             key: "employees",              fmt: v => Number(v).toLocaleString("sv-SE") },
     ]);
 }
@@ -675,7 +698,7 @@ function renderYoY(d) {
   const nDelta = allYears.length - 1;
   const colSpan = 1 + allYears.length + nDelta;
 
-  let h = '<div class="fin-table-wrap"><table class="fin-table yoy-table"><thead><tr><th>EURm</th>';
+  let h = `<div class="fin-table-wrap"><table class="fin-table yoy-table"><thead><tr><th>${_currencyUnit}</th>`;
   allYears.forEach((y, i) => {
     h += `<th>${y}</th>`;
     if (i < nDelta) h += '<th class="fin-delta-hdr">Δ%</th>';
@@ -728,8 +751,8 @@ function renderYoY(d) {
   addRatioRow('ROE',             y => (kfMap[y] || {}).roe_pct,                v => fmt(v, 1) + "%");
   addRatioRow('Cost / Income',   y => (kfMap[y] || {}).cost_to_income_pct,     v => fmt(v, 1) + "%", true);
   addRatioRow('Net Loan Loss %', y => (kfMap[y] || {}).net_loan_loss_ratio_pct,v => fmt(v, 2) + "%", true);
-  addRatioRow('Diluted EPS',     y => (kfMap[y] || {}).diluted_eps,            v => fmt(v, 2) + " SEK");
-  addRatioRow('Dividend/Share',  y => (kfMap[y] || {}).dividend_per_share,     v => fmt(v, 2) + " SEK");
+  addRatioRow('Diluted EPS',     y => (kfMap[y] || {}).diluted_eps,            v => fmt(v, 2) + " " + _baseCcy());
+  addRatioRow('Dividend/Share',  y => (kfMap[y] || {}).dividend_per_share,     v => fmt(v, 2) + " " + _baseCcy());
 
   h += '</tbody></table></div>';
   wrap.innerHTML = h;
@@ -752,8 +775,8 @@ function renderQoQ(d) {
     { label: "Net Profit",   key: "net_income" },
   ];
 
-  // Header: EURm | Q1 | QoQ% | Q2 | QoQ% | …
-  let h = '<div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>EURm</th>';
+  // Header: currency | Q1 | QoQ% | Q2 | QoQ% | …
+  let h = `<div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>${_currencyUnit}</th>`;
   quarters.forEach((q, i) => {
     h += `<th>${q.period}</th>`;
     if (i < quarters.length - 1) h += '<th>QoQ %</th>';
@@ -1109,6 +1132,7 @@ async function submitUpload() {
           report_type: item.reportType,
           period,
           pdf_text: pdfText,
+          filename: item.file.name,
         }),
       });
       const data = await res.json();
@@ -1119,6 +1143,10 @@ async function submitUpload() {
         return;
       }
       successCount++;
+      // Store the filename so renderSourceChips can display it even after analysis
+      if (item.reportType === "annual") {
+        sessionStorage.setItem("pdf_filename_" + ticker, item.file.name);
+      }
     } catch (err) {
       showUploadError(`${item.file.name}: network error — ${err.message}`);
       submitBtn.disabled = false;

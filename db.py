@@ -157,37 +157,84 @@ def save_analysis(ticker: str, data: dict, period: str = "", report_type: str = 
 
 # ── PDF store ─────────────────────────────────────────────────────────────────
 
-def save_pdf_text(ticker: str, report_type: str, period: str, pdf_text: str) -> bool:
+def save_pdf_text(ticker: str, report_type: str, period: str, pdf_text: str,
+                  filename: str = "") -> bool:
     """
     Upsert one PDF's extracted text into stock_pdf_store.
     Matches on (ticker, report_type, period) — re-uploading the same period
     overwrites the previous text.
+    The optional `filename` field is stored if the column exists in Supabase
+    (run: ALTER TABLE stock_pdf_store ADD COLUMN IF NOT EXISTS filename TEXT).
     """
     client = _get_client()
     if client is None:
         return False
     try:
         now_iso = datetime.now(timezone.utc).isoformat()
-        # Delete existing row for the same (ticker, report_type, period) first,
-        # then insert — Supabase free tier doesn't support composite upsert easily.
         client.table("stock_pdf_store") \
             .delete() \
             .eq("ticker", ticker) \
             .eq("report_type", report_type) \
             .eq("period", period) \
             .execute()
-        client.table("stock_pdf_store").insert({
+        row = {
             "ticker":      ticker,
             "report_type": report_type,
             "period":      period,
             "pdf_text":    pdf_text,
             "uploaded_at": now_iso,
-        }).execute()
-        print(f"[db] Saved {report_type} PDF for {ticker} period={period} ({len(pdf_text):,} chars)")
+        }
+        if filename:
+            row["filename"] = filename
+        try:
+            client.table("stock_pdf_store").insert(row).execute()
+        except Exception as col_exc:
+            # Retry without filename if the column doesn't exist yet
+            if filename and "filename" in str(col_exc):
+                print(f"[db] filename column missing — retrying without it")
+                row.pop("filename", None)
+                client.table("stock_pdf_store").insert(row).execute()
+            else:
+                raise
+        print(f"[db] Saved {report_type} PDF for {ticker} period={period} "
+              f"({len(pdf_text):,} chars){' file=' + filename if filename else ''}")
         return True
     except Exception as exc:
         print(f"[db] save_pdf_text error: {exc}")
         return False
+
+
+def get_pdf_filename(ticker: str) -> str | None:
+    """
+    Return the original filename of the most recently uploaded annual PDF for
+    this ticker, or None if the filename column doesn't exist or no file stored.
+    """
+    client = _get_client()
+    if client is None:
+        return None
+    try:
+        resp = (
+            client.table("stock_pdf_store")
+            .select("filename, period, report_type")
+            .eq("ticker", ticker)
+            .eq("report_type", "annual")
+            .order("uploaded_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = resp.data or []
+        if rows:
+            fn = rows[0].get("filename")
+            if fn:
+                return fn
+            # Fallback: build a human-readable label from period
+            period = rows[0].get("period", "")
+            if period:
+                return f"Annual Report {period}.pdf"
+        return None
+    except Exception as exc:
+        print(f"[db] get_pdf_filename error: {exc}")
+        return None
 
 
 def get_pdf_texts(ticker: str) -> dict:
