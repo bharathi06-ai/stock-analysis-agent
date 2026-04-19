@@ -37,7 +37,7 @@ from tools import (
     find_peers,
     _r,
 )
-from db import get_cached_analysis, save_analysis, is_cache_valid
+from db import get_cached_analysis, save_analysis, is_cache_valid, _get_primary_cache_key
 
 load_dotenv()
 
@@ -173,9 +173,9 @@ Return ONLY valid JSON (no markdown, no extra text):
 
 def compute_ratios(price_data: dict, pdf_financials: dict) -> dict:
     """
-    Build the ratios dict for the dashboard.
-    Valuation multiples (P/E, P/B, P/S) are computed from PDF data + yfinance price.
-    All margin / profitability / leverage ratios come directly from the annual report.
+    Build the ratios dict for the dashboard metric pills.
+    Valuation multiples (P/E, P/B, P/S) use PDF data + live price.
+    All other ratios come from key_figures (PDF extraction).
     """
     mkt          = price_data["market"]
     price        = mkt.get("price")
@@ -183,53 +183,47 @@ def compute_ratios(price_data: dict, pdf_financials: dict) -> dict:
 
     pl = pdf_financials.get("profit_loss", [])
     bs = pdf_financials.get("balance_sheet", [])
-    kr = pdf_financials.get("key_ratios", {})
+    kf = pdf_financials.get("key_figures", [])
 
     latest_pl = pl[0] if pl else {}
     latest_bs = bs[0] if bs else {}
+    latest_kf = kf[0] if kf else {}
 
-    eps       = latest_pl.get("eps")
-    revenue_m = latest_pl.get("revenue")   # MSEK
-    equity_m  = latest_bs.get("equity")    # MSEK
-    bvps      = latest_bs.get("book_value_per_share")
-    shares_m  = kr.get("shares_outstanding_m")   # millions
+    eps       = latest_kf.get("diluted_eps") or latest_kf.get("basic_eps")
+    revenue_m = latest_pl.get("revenue")
+    equity_m  = latest_bs.get("equity")
+    bvps      = latest_kf.get("equity_per_share")
+    shares_m  = latest_kf.get("shares_outstanding_m")
 
-    # Derive book value per share if not in PDF
-    # equity is MSEK, shares_m is millions → BVPS = equity / shares_m  (both ×10^6 cancel)
     if not bvps and equity_m and shares_m and shares_m > 0:
         bvps = _r(equity_m / shares_m, 2)
 
-    # Valuation multiples (need live price)
-    pe = _r(price / eps,            2) if price and eps       and eps       > 0 else None
-    pb = _r(price / bvps,           2) if price and bvps      and bvps      > 0 else None
+    pe = _r(price / eps,             2) if price and eps       and eps       > 0 else None
+    pb = _r(price / bvps,            2) if price and bvps      and bvps      > 0 else None
     ps = _r(market_cap_m / revenue_m, 2) if market_cap_m and revenue_m and revenue_m > 0 else None
 
-    # Dividend yield from PDF DPS + live price
-    dps      = kr.get("dividend_per_share")
+    dps       = latest_kf.get("dividend_per_share")
     div_yield = _r(dps / price * 100, 2) if dps and price and price > 0 else None
 
     return {
-        # Valuation — computed from PDF + price
         "pe":               pe,
-        "forward_pe":       None,        # not in PDFs
+        "forward_pe":       None,
         "pb":               pb,
         "ps":               ps,
-        # From annual report directly
-        "roe":              kr.get("roe_pct"),
-        "roa":              kr.get("roa_pct"),
-        "gross_margin":     kr.get("gross_margin_pct"),
-        "operating_margin": kr.get("operating_margin_pct"),
-        "net_margin":       kr.get("net_margin_pct"),
-        "current_ratio":    kr.get("current_ratio"),
-        "debt_to_equity":   kr.get("debt_to_equity"),
-        "payout_ratio":     kr.get("payout_ratio_pct"),
-        # Dividend yield computed from PDF DPS + price
+        "roe":              latest_kf.get("roe_pct"),
+        "roa":              None,
+        "gross_margin":     None,
+        "operating_margin": None,
+        "net_margin":       None,
+        "current_ratio":    None,
+        "debt_to_equity":   None,
+        "payout_ratio":     None,
         "dividend_yield":   div_yield,
         "dividend_per_share": dps,
-        # Per share — from PDF
         "eps":              eps,
-        # Beta — from yfinance (market/technical metric, not in PDFs)
         "beta":             mkt.get("beta"),
+        "cet1_ratio":       latest_kf.get("cet1_ratio_pct"),
+        "cost_to_income":   latest_kf.get("cost_to_income_pct"),
     }
 
 
@@ -261,11 +255,13 @@ def analyse_stock(ticker: str, progress_callback=None, force_refresh: bool = Fal
     print(f"StockGPT for Siva — analysing: {ticker}")
     print(f"{'='*60}")
 
-    # ── 0. Supabase cache check ────────────────────────────────────────────────
-    cache_valid = is_cache_valid(ticker)
-    print(f"  [cache] force_refresh={force_refresh}, is_cache_valid={cache_valid}")
+    # ── 0. Determine cache key then check cache ────────────────────────────────
+    cache_period, cache_report_type = _get_primary_cache_key(ticker)
+    cache_valid = is_cache_valid(ticker, cache_period, cache_report_type)
+    print(f"  [cache] force_refresh={force_refresh}, is_cache_valid={cache_valid}, "
+          f"key=({cache_period!r}, {cache_report_type!r})")
     if not force_refresh and cache_valid:
-        cached = get_cached_analysis(ticker)
+        cached = get_cached_analysis(ticker, cache_period, cache_report_type)
         if cached is not None:
             if progress_callback:
                 progress_callback("Loaded from cache", 6, TOTAL_STEPS)
@@ -347,6 +343,7 @@ def analyse_stock(ticker: str, progress_callback=None, force_refresh: bool = Fal
         "profit_loss":   pdf_financials.get("profit_loss", []),
         "balance_sheet": pdf_financials.get("balance_sheet", []),
         "cash_flow":     pdf_financials.get("cash_flow", []),
+        "key_figures":   pdf_financials.get("key_figures", []),
         "quarters":      pdf_financials.get("quarters", []),
         # Ratios: margins/ROE/ROA from PDF; P/E, P/B, P/S computed from PDF + price
         "ratios":  ratios,
@@ -386,7 +383,7 @@ def analyse_stock(ticker: str, progress_callback=None, force_refresh: bool = Fal
     print(f"{'='*60}\n")
 
     # ── 9. Persist to Supabase cache ──────────────────────────────────────────
-    save_analysis(ticker, dashboard)
+    save_analysis(ticker, dashboard, cache_period, cache_report_type)
 
     return dashboard
 

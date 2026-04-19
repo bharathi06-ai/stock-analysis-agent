@@ -3,10 +3,11 @@ import os
 import queue
 import re
 import threading
+from pathlib import Path
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context, session, redirect, url_for
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")

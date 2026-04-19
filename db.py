@@ -26,10 +26,12 @@ import hashlib
 import json
 import os
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# Anchor to this file's directory so .env is found regardless of CWD
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 _client = None
 
@@ -43,19 +45,66 @@ def _get_client():
     # Accept both naming conventions (local .env uses SUPABASE_ANON_KEY; Vercel may use SUPABASE_KEY)
     key = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("SUPABASE_KEY")
     if not url or not key:
-        print(f"[db] Missing env vars — SUPABASE_URL={'set' if url else 'MISSING'}, key={'set' if key else 'MISSING'}")
+        print(f"[db] Supabase init FAILED — SUPABASE_URL={'set' if url else 'MISSING'}, key={'set' if key else 'MISSING'}")
         return None
 
     try:
         from supabase import create_client
         _client = create_client(url, key)
+        print(f"[db] Supabase client initialised OK (url={url[:40]}...)")
         return _client
     except Exception as exc:
-        print(f"[db] Supabase client init failed: {exc}")
+        print(f"[db] Supabase client init FAILED: {exc}")
         return None
 
 
-def get_cached_analysis(ticker: str) -> dict | None:
+def _log_startup() -> None:
+    client = _get_client()
+    if client is None:
+        print("[db] STARTUP: Supabase unavailable — caching disabled")
+    else:
+        print("[db] STARTUP: Supabase ready")
+
+
+_log_startup()
+
+
+def _get_primary_cache_key(ticker: str) -> tuple[str, str]:
+    """Return (period, report_type) for the most recent annual PDF for ticker,
+    falling back to the most recently uploaded PDF, or ("", "") if none stored."""
+    client = _get_client()
+    if client is None:
+        return ("", "")
+    try:
+        resp = (
+            client.table("stock_pdf_store")
+            .select("period, report_type")
+            .eq("ticker", ticker)
+            .eq("report_type", "annual")
+            .order("period", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = resp.data or []
+        if rows:
+            return (rows[0]["period"], rows[0]["report_type"])
+        resp2 = (
+            client.table("stock_pdf_store")
+            .select("period, report_type")
+            .eq("ticker", ticker)
+            .order("uploaded_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows2 = resp2.data or []
+        if rows2:
+            return (rows2[0]["period"], rows2[0]["report_type"])
+    except Exception as exc:
+        print(f"[db] _get_primary_cache_key error: {exc}")
+    return ("", "")
+
+
+def get_cached_analysis(ticker: str, period: str = "", report_type: str = "") -> dict | None:
     client = _get_client()
     if client is None:
         return None
@@ -65,12 +114,14 @@ def get_cached_analysis(ticker: str) -> dict | None:
             client.table("stock_ai_cache")
             .select("analysis_json")
             .eq("ticker", ticker)
+            .eq("period", period)
+            .eq("report_type", report_type)
             .limit(1)
             .execute()
         )
         rows = resp.data
         if rows and rows[0].get("analysis_json"):
-            print(f"[db] Cache hit for {ticker}")
+            print(f"[db] Cache hit for {ticker} period={period!r} type={report_type!r}")
             return rows[0]["analysis_json"]
         return None
     except Exception as exc:
@@ -78,7 +129,7 @@ def get_cached_analysis(ticker: str) -> dict | None:
         return None
 
 
-def save_analysis(ticker: str, data: dict) -> None:
+def save_analysis(ticker: str, data: dict, period: str = "", report_type: str = "") -> None:
     client = _get_client()
     if client is None:
         return
@@ -90,14 +141,16 @@ def save_analysis(ticker: str, data: dict) -> None:
 
         client.table("stock_ai_cache").upsert(
             {
-                "ticker": ticker,
+                "ticker":        ticker,
+                "period":        period,
+                "report_type":   report_type,
                 "analysis_json": data,
-                "data_hash": data_hash,
-                "generated_at": now_iso,
+                "data_hash":     data_hash,
+                "generated_at":  now_iso,
             },
-            on_conflict="ticker",
+            on_conflict="ticker,period,report_type",
         ).execute()
-        print(f"[db] Saved analysis for {ticker} (hash={data_hash[:8]}…)")
+        print(f"[db] Saved analysis for {ticker} period={period!r} type={report_type!r} (hash={data_hash[:8]}…)")
     except Exception as exc:
         print(f"[db] save_analysis error: {exc}")
 
@@ -218,7 +271,7 @@ def clear_analysis_cache(ticker: str) -> None:
 
 # ── Analysis cache ─────────────────────────────────────────────────────────────
 
-def is_cache_valid(ticker: str, max_age_hours: int = 24) -> bool:
+def is_cache_valid(ticker: str, period: str = "", report_type: str = "", max_age_hours: int = 24) -> bool:
     client = _get_client()
     if client is None:
         print(f"[db] is_cache_valid: Supabase client is None — returning False")
@@ -229,6 +282,8 @@ def is_cache_valid(ticker: str, max_age_hours: int = 24) -> bool:
             client.table("stock_ai_cache")
             .select("generated_at")
             .eq("ticker", ticker)
+            .eq("period", period)
+            .eq("report_type", report_type)
             .limit(1)
             .execute()
         )
@@ -242,7 +297,7 @@ def is_cache_valid(ticker: str, max_age_hours: int = 24) -> bool:
 
         age = datetime.now(timezone.utc) - generated_at
         valid = age < timedelta(hours=max_age_hours)
-        print(f"[db] Cache for {ticker}: age={int(age.total_seconds()//3600)}h, max={max_age_hours}h, valid={valid}")
+        print(f"[db] Cache for {ticker} period={period!r}: age={int(age.total_seconds()//3600)}h, valid={valid}")
         return valid
     except Exception as exc:
         print(f"[db] is_cache_valid error: {exc}")

@@ -53,6 +53,35 @@ def _to_finnhub_ticker(ticker: str) -> str:
         return ticker[:-3]
     return ticker
 
+# Manual overrides for tickers where Finnhub returns the wrong company name
+# (e.g. US-listed names for dual-listed Swedish shares)
+_COMPANY_NAME_OVERRIDES: dict[str, str] = {
+    # yfinance (.ST) form          # correct display name
+    "SEB-A.ST":    "SEB",
+    "ERIC-B.ST":   "Ericsson",
+    "VOLV-B.ST":   "Volvo",
+    "NDA-SE.ST":   "Nordea",
+    "SWED-A.ST":   "Swedbank",
+    "INVE-B.ST":   "Investor",
+    "SAND.ST":     "Sandvik",
+    "SKF-B.ST":    "SKF",
+    "ATCO-A.ST":   "Atlas Copco",
+    "ATCO-B.ST":   "Atlas Copco",
+    "SHB-A.ST":    "Handelsbanken",
+    # bare forms (in case .ST suffix was stripped)
+    "SEB-A":       "SEB",
+    "ERIC-B":      "Ericsson",
+    "VOLV-B":      "Volvo",
+    "NDA-SE":      "Nordea",
+    "SWED-A":      "Swedbank",
+    "INVE-B":      "Investor",
+    "SAND":        "Sandvik",
+    "SKF-B":       "SKF",
+    "ATCO-A":      "Atlas Copco",
+    "ATCO-B":      "Atlas Copco",
+    "SHB-A":       "Handelsbanken",
+}
+
 # ── In-memory ticker cache (5-minute TTL) ────────────────────────────────────
 _mem_cache: dict = {}   # {ticker: {"ts": float, "data": dict}}
 _MEM_TTL = 300          # seconds
@@ -255,7 +284,7 @@ def get_price_data(ticker: str) -> dict:
         result = {
             "success": True,
             "company": {
-                "name":        KNOWN_COMPANIES.get(ticker) or profile.get("name") or ticker_to_name(ticker),
+                "name":        _COMPANY_NAME_OVERRIDES.get(ticker) or KNOWN_COMPANIES.get(ticker) or profile.get("name") or ticker_to_name(ticker),
                 "ticker":      ticker,
                 "sector":      profile.get("finnhubIndustry", "N/A"),
                 "industry":    profile.get("finnhubIndustry", "N/A"),
@@ -352,132 +381,146 @@ def fetch_reports(ticker: str) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 
 _EXTRACT_SYSTEM = """\
-You are a financial statement parser specialising in Swedish company reports (Nasdaq Stockholm).
-Your task: extract key financial figures from PDF-extracted report text and return structured JSON.
+You are a financial statement parser specialising in Nordic bank annual reports.
+Extract figures from PDF text and return structured JSON only.
 
-RULES:
-1. ALL monetary values must be in MSEK (millions of Swedish kronor).
-   - If report uses BSEK (billions): multiply by 1000
-   - If report uses KSEK (thousands): divide by 1000
-   - If report uses MEUR: multiply by ~11.5
-   - If report uses BEUR: multiply by ~11500
-2. Extract figures for up to 5 fiscal years from annual reports (most recent first).
-3. For quarterly reports: extract the 3-MONTH period figures ONLY — NOT cumulative YTD totals.
-   (Look for column headers like "Q1 2025", "Jan–Mar 2025", "Kvartal 1" etc.)
-4. Use null for any field not found. Never invent or estimate numbers.
-5. For banks (Nordea, SEB, Handelsbanken, Swedbank, Länsförsäkringar, etc.):
-   - "gross_profit" = null (banks don't report this)
-   - "operating_income" = profit before loan losses / credit losses (Rörelseresultat före kreditförluster)
-     OR operating profit / profit before tax if that line is absent
-6. Return ONLY valid JSON — no markdown fences, no explanation text.
+RULES
+1. ALL monetary values in MSEK (millions of Swedish kronor).
+   MEUR → multiply by 11.5 | BEUR → multiply by 11 500 | BSEK → multiply by 1 000 | KSEK → divide by 1 000
+2. Extract up to 5 fiscal years (most recent first) for profit_loss / balance_sheet / cash_flow / key_figures.
+3. Quarterly reports: extract 3-MONTH figures ONLY — never cumulative YTD.
+4. Use null for any field not found. Never invent or estimate.
+5. Return ONLY valid JSON — no markdown fences, no prose.
 
 ════════════════════════════════════════════════════════════
-BANK INCOME STATEMENT FIELD MAPPING (critical — read carefully)
+INCOME STATEMENT — field mapping
 ════════════════════════════════════════════════════════════
-Swedish banks use a specific income statement structure. Map each line EXACTLY:
+"nii"                     Net interest income
+                          Sv: Räntenetto
+"fee_income"              Net fee and commission income
+                          Sv: Provisionsnetto
+"insurance_result"        Net insurance result
+                          Sv: Nettoresultat livförsäkring / Försäkringsresultat
+"fair_value"              Net result from items at fair value
+                          Sv: Nettoresultat finansiella poster till verkligt värde
+"other_income"            Other operating income (not captured above)
+                          Sv: Övriga rörelseintäkter
+"revenue"                 Total Operating Income  ← sum of all income lines
+                          Sv: Summa rörelseintäkter / Totala rörelseintäkter
 
-  "nii" (Net interest income):
-      Swedish: "Räntenetto", "Ränte­netto", "Nettoresultat av räntor"
-      English: "Net interest income", "Net interest margin income"
+"staff_costs"             Staff costs  [NEGATIVE MSEK]
+                          Sv: Personalkostnader
+"other_expenses"          Other expenses  [NEGATIVE MSEK]
+                          Sv: Övriga administrationskostnader / Rörelsekostnader
+"reg_fees"                Regulatory fees / resolution fund  [NEGATIVE MSEK]
+                          Sv: Avgifter till resolutionsfonden / Stabilitetsavgift
+"da"                      Depreciation, amortisation and impairment  [NEGATIVE MSEK]
+                          Sv: Av- och nedskrivningar
+"total_expenses"          Total Operating Expenses  [NEGATIVE MSEK]  ← sum of expense lines
+                          Sv: Summa rörelsekostnader / Totala kostnader
 
-  "fee_income" (Net fee & commission income):
-      Swedish: "Provisionsnetto", "Provisions­netto", "Nettoprovisioner",
-               "Avgifts- och provisionsnetto"
-      English: "Net fee and commission income", "Net commission income",
-               "Fee and commission income net"
-
-  "insurance_result" (Net insurance result):
-      Swedish: "Nettoresultat livförsäkring", "Försäkringsresultat",
-               "Livförsäkringsnetto"
-      English: "Net insurance result", "Life insurance result"
-
-  "fair_value" (Net financial items at fair value / trading):
-      Swedish: "Nettoresultat finansiella poster till verkligt värde",
-               "Nettoresultat av finansiella transaktioner",
-               "Finansnetto", "Handelsresultat", "Övriga rörelseintäkter"
-      English: "Net result financial items at fair value",
-               "Net financial income", "Trading result", "Other income"
-
-  "other_income" (Other operating income not captured above):
-      Swedish: "Övriga rörelseintäkter", "Övriga intäkter"
-      English: "Other operating income", "Other income"
-
-  "revenue" (TOTAL operating income — sum of all income lines above):
-      Swedish: "Summa rörelseintäkter", "Totala rörelseintäkter",
-               "Summa intäkter", "Rörelsens intäkter totalt"
-      English: "Total operating income", "Total income", "Total revenues"
-
-  "staff_costs" (Personnel / staff expenses — store as NEGATIVE MSEK):
-      Swedish: "Personalkostnader", "Personal­kostnader", "Lönekostnader",
-               "Kostnader för anställda"
-      English: "Staff costs", "Personnel expenses", "Employee costs"
-
-  "other_expenses" (Other administrative / operating expenses — NEGATIVE MSEK):
-      Swedish: "Övriga administrationskostnader", "Övriga kostnader",
-               "Administrationskostnader", "Rörelsekostnader"
-      English: "Other administrative expenses", "Other operating expenses",
-               "General and administrative expenses"
-
-  "reg_fees" (Regulatory fees, resolution fund — NEGATIVE MSEK):
-      Swedish: "Avgifter till resolutionsfonden", "Stabilitetsavgift",
-               "Tillsynsavgifter", "Regulatoriska avgifter"
-      English: "Resolution fund fee", "Stability fee", "Regulatory fees",
-               "Supervisory fees"
-
-  "da" (Depreciation & amortisation — NEGATIVE MSEK):
-      Swedish: "Av- och nedskrivningar", "Avskrivningar på materiella och
-               immateriella tillgångar", "Avskrivningar"
-      English: "Depreciation and amortisation", "D&A",
-               "Depreciation of tangible and intangible assets"
-
-  "operating_income" (Operating profit before loan losses):
-      Swedish: "Rörelseresultat", "Rörelseresultat före kreditförluster",
-               "Resultat före kreditförluster och nedskrivningar"
-      English: "Operating profit", "Profit before loan losses",
-               "Result before credit losses"
-
-  "net_income" (Net profit for the period):
-      Swedish: "Periodens resultat", "Årets resultat", "Nettoresultat"
-      English: "Net profit", "Profit for the period", "Net income"
-
-  "eps" (Earnings per share in SEK):
-      Swedish: "Resultat per aktie", "Vinst per aktie"
-      English: "Earnings per share", "EPS"
+"profit_before_loan_losses"  Profit Before Loan Losses  = revenue + total_expenses
+                              Sv: Rörelseresultat före kreditförluster
+                              En: Profit before loan losses / Operating profit before provisions
+"net_result_loans_fv"     Net result on loans at fair value
+                          Sv: Nettoresultat på utlåning till verkligt värde
+"net_loan_losses"         Net loan losses / credit losses  [negative = losses]
+                          Sv: Kreditförluster netto / Nettokreditförluster
+"operating_profit"        Operating Profit  = profit_before_loan_losses + net_loan_losses + net_result_loans_fv
+                          Sv: Rörelseresultat / Rörelsevinst
+"income_tax"              Income tax expense  [NEGATIVE MSEK]
+                          Sv: Skatt / Inkomstskatt
+"net_income"              Net Profit for the year
+                          Sv: Årets/Periodens resultat / Nettoresultat
 
 ════════════════════════════════════════════════════════════
-BANK BALANCE SHEET FIELD MAPPING
+BALANCE SHEET — field mapping
 ════════════════════════════════════════════════════════════
-  "cash":         Kassa och tillgodohavanden hos centralbanker /
-                  Cash and balances at central banks
-  "loans":        Utlåning till allmänheten / Loans to the public /
-                  Loans and advances to customers
-  "investments":  Räntebärande värdepapper / Obligationer /
-                  Interest-bearing securities / Financial investments
-  "other_assets": Övriga tillgångar / Other assets (catch-all remainder)
-  "total_assets": Summa tillgångar / Balansomslutning / Total assets
+ASSETS
+"cash_central_banks"          Cash and balances with central banks
+                              Sv: Kassa och tillgodohavanden hos centralbanker
+"loans_credit_institutions"   Loans to central banks and credit institutions
+                              Sv: Utlåning till kreditinstitut
+"loans_public"                Loans to the public
+                              Sv: Utlåning till allmänheten
+"securities"                  Interest-bearing securities and pledged instruments
+                              Sv: Räntebärande värdepapper / Obligationer / Pantsatta instrument
+"pooled_unit_linked"          Assets in pooled schemes and unit-linked contracts
+                              Sv: Tillgångar i poolade fonder / Fondförsäkring
+"derivatives_assets"          Derivatives assets
+                              Sv: Derivat (tillgångssidan)
+"other_assets"                Other assets (remainder)
+                              Sv: Övriga tillgångar
+"total_assets"                Total Assets
+                              Sv: Summa tillgångar / Balansomslutning
 
-  "deposits":     In- och upplåning från allmänheten / Deposits from the public /
-                  Due to customers
-  "issued_sec":   Emitterade värdepapper / Upplåning /
-                  Issued securities / Debt securities in issue
-  "total_debt":   Räntebärande skulder totalt / Total interest-bearing liabilities
-  "other_liab":   Övriga skulder / Other liabilities
-  "total_liabilities": Summa skulder / Total liabilities
-
-  "equity":       Eget kapital / Total equity / Shareholders equity
+LIABILITIES
+"deposits_credit_institutions"  Deposits by credit institutions
+                                Sv: Skulder till kreditinstitut
+"deposits_public"               Deposits and borrowings from the public
+                                Sv: In- och upplåning från allmänheten
+"deposits_pooled"               Deposits in pooled schemes and unit-linked contracts
+                                Sv: Skulder i poolade fonder / Fondförsäkring
+"insurance_liabilities"         Insurance contract liabilities
+                                Sv: Försäkringsavtalsskulder / Livförsäkringsskulder
+"debt_securities"               Debt securities in issue
+                                Sv: Emitterade värdepapper / Upplåning via värdepapper
+"derivatives_liabilities"       Derivatives liabilities
+                                Sv: Derivat (skuldsidan)
+"subordinated_liabilities"      Subordinated liabilities
+                                Sv: Efterställda skulder / Förlagslån
+"other_liabilities"             Other liabilities
+                                Sv: Övriga skulder
+"total_liabilities"             Total Liabilities
+                                Sv: Summa skulder
+EQUITY
+"equity"                        Total Equity
+                                Sv: Eget kapital totalt
+"total_liabilities_equity"      Total Liabilities and Equity  [= total_assets]
+                                Sv: Summa skulder och eget kapital
 
 ════════════════════════════════════════════════════════════
-NON-BANK (INDUSTRIAL) FIELD MAPPING
+CASH FLOW — field mapping
 ════════════════════════════════════════════════════════════
-  "revenue":          Nettoomsättning / Net sales / Revenue
-  "gross_profit":     Bruttoresultat / Gross profit
-  "operating_income": Rörelseresultat / EBIT / Operating profit
-  "net_income":       Periodens/Årets resultat / Net profit
-  "staff_costs":      Personalkostnader / Personnel costs (NEGATIVE MSEK)
-  "da":               Avskrivningar / D&A (NEGATIVE MSEK)
+"operating_profit_cf"     Operating profit (starting line of cash flow statement)
+"non_cash_adjustments"    Adjustments for non-cash items  (depreciation, provisions, etc.)
+"income_taxes_paid"       Income taxes paid  [NEGATIVE MSEK]
+"cf_before_changes"       Cash flow before changes in operating assets and liabilities
+"change_loans_public"     Change in loans to the public  (negative = growth in loans)
+"change_deposits_public"  Change in deposits from the public  (positive = growth in deposits)
+"operating_cf"            Cash flow from operating activities  ← section total
+                          Sv: Kassaflöde från rörelseverksamheten
+"capex_ppe"               Acquisition of property and equipment  [NEGATIVE MSEK]
+"capex_intangibles"       Acquisition of intangible assets  [NEGATIVE MSEK]
+"investing_cf"            Cash flow from investing activities  ← section total
+                          Sv: Kassaflöde från investeringsverksamheten
+"dividend_paid"           Dividend paid  [NEGATIVE MSEK]
+"share_repurchase"        Repurchase of own shares  [NEGATIVE MSEK]
+"issued_subordinated"     Issued subordinated liabilities
+"financing_cf"            Cash flow from financing activities  ← section total
+                          Sv: Kassaflöde från finansieringsverksamheten
+"net_cash_flow"           Net cash flow for the year
+                          Sv: Årets kassaflöde / Förändring likvida medel
 
-  Balance sheet follows standard IFRS structure — map loans→null,
-  deposits→null, issued_sec→null for non-banks."""
+════════════════════════════════════════════════════════════
+KEY FIGURES — field mapping (per year; ratios as %, amounts as MSEK unless noted)
+════════════════════════════════════════════════════════════
+"basic_eps"               Basic earnings per share  [SEK]
+"diluted_eps"             Diluted earnings per share  [SEK]
+"share_price"             Share price at year-end  [SEK]
+"dividend_per_share"      Dividend per share  [SEK]
+"equity_per_share"        Equity per share / book value per share  [SEK]
+"shares_outstanding_m"    Shares outstanding  [millions]
+"roe_pct"                 Return on equity  [%]  Sv: Avkastning på eget kapital
+"cost_to_income_pct"      Cost-to-income ratio  [%]  Sv: K/I-tal
+"net_loan_loss_ratio_pct" Net loan loss ratio  [%]  Sv: Kreditförlustnivå
+"aum_bn"                  Assets under management  [EURbn]  Sv: Förvaltat kapital
+"cet1_ratio_pct"          CET1 capital ratio  [%]  Sv: Kärnprimärkapitalrelation
+"tier1_ratio_pct"         Tier 1 capital ratio  [%]  Sv: Primärkapitalrelation
+"total_capital_ratio_pct" Total capital ratio  [%]  Sv: Total kapitalrelation
+"tier1_capital"           Tier 1 capital  [MSEK]
+"rea"                     Risk exposure amount / Risk-weighted assets  [MSEK]
+"employees"               Number of employees (FTE)  [integer]"""
 
 
 def _empty_financials() -> dict:
@@ -486,14 +529,17 @@ def _empty_financials() -> dict:
         "profit_loss":   [],
         "balance_sheet": [],
         "cash_flow":     [],
-        "key_ratios":    {},
+        "key_figures":   [],
         "quarters":      [],
     }
 
 
 def _clean_financials(data: dict) -> dict:
     """Coerce extracted data: string numbers → float, null → None."""
-    for section in ("profit_loss", "balance_sheet", "cash_flow", "quarters"):
+    _INT_KEYS  = {"year", "employees"}
+    _STR_KEYS  = {"period"}
+
+    for section in ("profit_loss", "balance_sheet", "cash_flow", "key_figures", "quarters"):
         if not isinstance(data.get(section), list):
             data[section] = []
         cleaned = []
@@ -504,12 +550,12 @@ def _clean_financials(data: dict) -> dict:
             for k, v in row.items():
                 if v is None or v == "null" or v == "":
                     clean_row[k] = None
-                elif k in ("year",):
+                elif k in _INT_KEYS:
                     try:
                         clean_row[k] = int(float(str(v)))
                     except Exception:
                         clean_row[k] = v
-                elif k == "period":
+                elif k in _STR_KEYS:
                     clean_row[k] = str(v)
                 else:
                     try:
@@ -520,18 +566,9 @@ def _clean_financials(data: dict) -> dict:
             cleaned.append(clean_row)
         data[section] = cleaned
 
+    # Backward-compat: keep key_ratios as empty dict if absent
     if not isinstance(data.get("key_ratios"), dict):
         data["key_ratios"] = {}
-    kr = {}
-    for k, v in data["key_ratios"].items():
-        if v is None or v == "null" or v == "":
-            kr[k] = None
-        else:
-            try:
-                kr[k] = round(float(str(v).replace(",", ".").replace(" ", "")), 2)
-            except Exception:
-                kr[k] = None
-    data["key_ratios"] = kr
     return data
 
 
@@ -541,75 +578,67 @@ _EXTRACT_SCHEMA = {
     "profit_loss": [
         {
             "year": 2024,
-            # ── Income lines (banks: use NII / fee / other breakdown; industrials: use revenue) ──
-            "nii": None,                # Net interest income (banks only)
-            "fee_income": None,         # Net fee & commission income (banks only)
-            "insurance_result": None,   # Net insurance result (banks only)
-            "fair_value": None,         # Fair value / trading result (banks only)
-            "other_income": None,       # Other operating income
-            "revenue": None,            # Total operating income / net sales (ALL companies)
-            # ── Expense lines ──────────────────────────────────────────────────
-            "staff_costs": None,        # Staff / personnel costs (negative MSEK)
-            "other_expenses": None,     # Other operating expenses (negative MSEK)
-            "reg_fees": None,           # Regulatory fees / resolution fund (banks)
-            "da": None,                 # Depreciation & amortisation (negative MSEK)
-            # ── Profit lines ───────────────────────────────────────────────────
-            "gross_profit": None,       # Gross profit (industrials only)
-            "operating_income": None,   # Operating profit / EBIT
-            "net_income": None,         # Net profit for the period
-            "ebitda": None,             # EBITDA
-            "eps": None,                # Earnings per share (SEK)
+            "nii": None, "fee_income": None, "insurance_result": None,
+            "fair_value": None, "other_income": None,
+            "revenue": None,
+            "staff_costs": None, "other_expenses": None, "reg_fees": None, "da": None,
+            "total_expenses": None,
+            "profit_before_loan_losses": None,
+            "net_result_loans_fv": None, "net_loan_losses": None,
+            "operating_profit": None,
+            "income_tax": None,
+            "net_income": None,
         }
     ],
     "balance_sheet": [
         {
             "year": 2024,
-            # ── Assets ─────────────────────────────────────────────────────────
-            "cash": None,               # Cash & equivalents / liquid assets
-            "loans": None,              # Loans & receivables to customers/banks
-            "investments": None,        # Financial investments / securities
-            "other_assets": None,       # Other assets (catch-all)
-            "total_assets": None,       # Total assets (Balansomslutning)
-            # ── Liabilities ────────────────────────────────────────────────────
-            "deposits": None,           # Customer deposits / due to customers
-            "issued_sec": None,         # Issued securities / bonds
-            "total_debt": None,         # Total interest-bearing debt
-            "other_liab": None,         # Other liabilities
-            "total_liabilities": None,  # Total liabilities
-            # ── Equity ─────────────────────────────────────────────────────────
-            "equity": None,             # Total equity (Eget kapital)
-            "book_value_per_share": None,
+            "cash_central_banks": None, "loans_credit_institutions": None,
+            "loans_public": None, "securities": None,
+            "pooled_unit_linked": None, "derivatives_assets": None,
+            "other_assets": None, "total_assets": None,
+            "deposits_credit_institutions": None, "deposits_public": None,
+            "deposits_pooled": None, "insurance_liabilities": None,
+            "debt_securities": None, "derivatives_liabilities": None,
+            "subordinated_liabilities": None, "other_liabilities": None,
+            "total_liabilities": None,
+            "equity": None, "total_liabilities_equity": None,
         }
     ],
     "cash_flow": [
         {
             "year": 2024,
+            "operating_profit_cf": None, "non_cash_adjustments": None,
+            "income_taxes_paid": None, "cf_before_changes": None,
+            "change_loans_public": None, "change_deposits_public": None,
             "operating_cf": None,
+            "capex_ppe": None, "capex_intangibles": None,
             "investing_cf": None,
+            "dividend_paid": None, "share_repurchase": None,
+            "issued_subordinated": None,
             "financing_cf": None,
-            "capex": None,
-            "free_cf": None,
+            "net_cash_flow": None,
         }
     ],
-    "key_ratios": {
-        "roe_pct": None,
-        "roa_pct": None,
-        "operating_margin_pct": None,
-        "net_margin_pct": None,
-        "gross_margin_pct": None,
-        "debt_to_equity": None,
-        "current_ratio": None,
-        "dividend_per_share": None,
-        "payout_ratio_pct": None,
-        "shares_outstanding_m": None,
-    },
+    "key_figures": [
+        {
+            "year": 2024,
+            "basic_eps": None, "diluted_eps": None,
+            "share_price": None, "dividend_per_share": None,
+            "equity_per_share": None, "shares_outstanding_m": None,
+            "roe_pct": None, "cost_to_income_pct": None,
+            "net_loan_loss_ratio_pct": None, "aum_bn": None,
+            "cet1_ratio_pct": None, "tier1_ratio_pct": None,
+            "total_capital_ratio_pct": None,
+            "tier1_capital": None, "rea": None,
+            "employees": None,
+        }
+    ],
     "quarters": [
         {
             "period": "Q1 2025",
-            "revenue": None,
-            "gross_profit": None,
-            "net_income": None,
-            "eps": None,
+            "revenue": None, "gross_profit": None,
+            "net_income": None, "eps": None,
         }
     ],
 }

@@ -8,7 +8,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/style.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
@@ -95,10 +94,7 @@
     <button class="tab-btn" data-tab="ratios">Ratios &amp; Key Figures</button>
     <button class="tab-btn" data-tab="yoy">YoY Analysis</button>
     <button class="tab-btn" data-tab="qoq">QoQ Analysis</button>
-    <button class="tab-btn" data-tab="price">Price Chart</button>
     <button class="tab-btn" data-tab="analysis">AI Analysis</button>
-    <button class="tab-btn" data-tab="peers">Peers</button>
-    <button class="tab-btn" data-tab="shareholders">Shareholders</button>
   </nav>
 
   <!-- Tab panels -->
@@ -106,6 +102,7 @@
 
     <!-- 1. SUMMARY -->
     <section id="tab-summary" class="tab-panel active">
+      <div id="summary-highlights"></div>
       <div class="two-col">
         <div>
           <h3 class="section-heading">About the Company</h3>
@@ -163,58 +160,13 @@
       <div id="qoq-table-wrap"></div>
     </section>
 
-    <!-- 8. PRICE CHART -->
-    <section id="tab-price" class="tab-panel">
-      <div class="chart-header-row">
-        <h3 class="section-heading">Price History</h3>
-        <div class="range-btns" id="price-range-btns">
-          <button class="range-btn" data-range="1W">1W</button>
-          <button class="range-btn" data-range="1M">1M</button>
-          <button class="range-btn" data-range="3M">3M</button>
-          <button class="range-btn" data-range="6M">6M</button>
-          <button class="range-btn active" data-range="1Y">1Y</button>
-          <button class="range-btn" data-range="5Y">5Y</button>
-        </div>
-      </div>
-      <div id="price-source-chip" class="tab-source-chip"></div>
-      <div class="chart-wrap tall">
-        <canvas id="chart-price"></canvas>
-      </div>
-      <h3 class="section-heading" style="margin-top:28px">Volume</h3>
-      <div class="chart-wrap short">
-        <canvas id="chart-volume"></canvas>
-      </div>
-    </section>
-
-    <!-- 9. AI ANALYSIS -->
+    <!-- 8. AI ANALYSIS -->
     <section id="tab-analysis" class="tab-panel">
       <h3 class="section-heading">AI Equity Analysis</h3>
       <div id="analysis-source-chip" class="tab-source-chip"></div>
       <div id="analysis-text" class="analysis-text"></div>
       <h3 class="section-heading" style="margin-top:32px">Recent News</h3>
       <div id="news-list" class="news-list"></div>
-    </section>
-
-    <!-- 10. PEERS -->
-    <section id="tab-peers" class="tab-panel">
-      <h3 class="section-heading">Peer Comparison</h3>
-      <div id="peers-table-wrap"></div>
-    </section>
-
-    <!-- 11. SHAREHOLDERS -->
-    <section id="tab-shareholders" class="tab-panel">
-      <div class="two-col">
-        <div>
-          <h3 class="section-heading">Top Institutional Holders</h3>
-          <div id="sh-table-wrap" class="table-wrap"></div>
-        </div>
-        <div>
-          <h3 class="section-heading">Ownership Distribution</h3>
-          <div class="chart-wrap donut-wrap">
-            <canvas id="chart-shareholders"></canvas>
-          </div>
-        </div>
-      </div>
     </section>
 
   </div><!-- /tab-panels -->
@@ -254,42 +206,32 @@
 </div>
 
 <!-- ═══════════════════════ UPLOAD PDF ═══════════════════════ -->
-<div id="upload-overlay" class="fb-overlay hidden" onclick="closeUploadOnOverlay(event)">
+<div id="upload-overlay" class="fb-overlay upload-overlay hidden" onclick="closeUploadOnOverlay(event)">
   <div class="fb-modal upload-modal" role="dialog" aria-modal="true" aria-labelledby="upload-title">
 
     <div class="fb-header">
-      <span id="upload-title" class="fb-title">Upload Annual / Quarterly Report</span>
+      <span id="upload-title" class="fb-title">Upload PDF Reports</span>
       <button class="fb-close" onclick="closeUpload()" aria-label="Close">✕</button>
     </div>
 
-    <form id="upload-form" novalidate>
-      <label class="fb-label" for="up-ticker">Ticker</label>
-      <input id="up-ticker" class="fb-input" type="text"
-             placeholder="e.g. NDA-SE.ST" autocomplete="off" spellcheck="false" required>
+    <label class="fb-label" for="up-ticker">Ticker</label>
+    <input id="up-ticker" class="fb-input" type="text"
+           placeholder="e.g. NDA-SE.ST" autocomplete="off" spellcheck="false">
 
-      <label class="fb-label">Report Type</label>
-      <div class="up-type-row">
-        <label class="up-type-btn">
-          <input type="radio" name="report_type" value="annual" checked>
-          <span>Annual Report</span>
-        </label>
-        <label class="up-type-btn">
-          <input type="radio" name="report_type" value="quarterly">
-          <span>Quarterly Report</span>
-        </label>
-      </div>
+    <div id="up-file-list" class="up-file-list"></div>
 
-      <label class="fb-label" for="up-period">Period</label>
-      <input id="up-period" class="fb-input" type="text"
-             placeholder="e.g. 2024  or  Q1 2025" autocomplete="off" required>
+    <button type="button" class="up-add-btn"
+            onclick="document.getElementById('up-file-input').click()">+ Add PDF files</button>
+    <input type="file" id="up-file-input" accept=".pdf" multiple style="display:none">
 
-      <label class="fb-label" for="up-file">PDF File</label>
-      <input id="up-file" class="fb-input" type="file" accept=".pdf" required>
+    <div id="up-error" class="up-error hidden"></div>
 
-      <div id="up-error" class="up-error hidden"></div>
+    <div id="up-progress" class="up-progress hidden">
+      <div id="up-progress-text" class="up-progress-text"></div>
+      <div class="up-progress-bar"><div id="up-progress-fill" class="up-progress-fill"></div></div>
+    </div>
 
-      <button type="submit" class="fb-submit" id="up-submit-btn">Upload &amp; Analyse</button>
-    </form>
+    <button type="button" class="fb-submit" id="up-submit-btn" onclick="submitUpload()">Upload All</button>
 
     <div id="up-success" class="fb-success hidden"></div>
 

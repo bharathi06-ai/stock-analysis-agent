@@ -5,153 +5,6 @@
 
 "use strict";
 
-// ── Chart colour palette ──────────────────────────────
-const C = {
-  blue:   "#4f7eff",
-  teal:   "#39d5c4",
-  green:  "#3fb950",
-  red:    "#f85149",
-  yellow: "#d29922",
-  purple: "#bc8cff",
-  orange: "#f0883e",
-  gray:   "#8b949e",
-};
-
-const GRID_COLOR  = "rgba(255,255,255,0.06)";
-const LABEL_COLOR = "#8b949e";
-const FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-
-// Chart.js global defaults
-Chart.defaults.color      = LABEL_COLOR;
-Chart.defaults.font.family = FONT_FAMILY;
-Chart.defaults.font.size  = 11;
-
-// Keep track of Chart.js instances so we can destroy before redraw
-const _charts = {};
-
-// Full chart data stored for range-button filtering
-let _chartData    = null;
-// Sliced arrays for the active range (read by tooltip handler)
-let _activeLabels  = [];
-let _activePrices  = [];
-let _activeVolumes = [];
-
-// ── Crosshair plugin — vertical + horizontal lines ───
-const crosshairPlugin = {
-  id: "crosshair",
-  afterEvent(chart, args) {
-    if (!chart.options.plugins?.crosshair?.enabled) return;
-    const e = args.event;
-    if (e.type === "mousemove") {
-      chart._crosshairX = e.x;
-      // Snap Y to the nearest data-point element so the H-line rides the curve
-      const els = chart.getElementsAtEventForMode(
-        e.native, "index", { intersect: false }, false
-      );
-      chart._crosshairY = els.length ? els[0].element.y : null;
-      args.changed = true;
-    } else if (e.type === "mouseout") {
-      chart._crosshairX = null;
-      chart._crosshairY = null;
-      args.changed = true;
-    }
-  },
-  afterDraw(chart) {
-    if (!chart.options.plugins?.crosshair?.enabled) return;
-    if (chart._crosshairX == null) return;
-    const { ctx, chartArea: { top, bottom, left, right } } = chart;
-    ctx.save();
-    ctx.setLineDash([4, 4]);
-    ctx.strokeStyle = "rgba(255,255,255,0.22)";
-    ctx.lineWidth = 1;
-    // Vertical line
-    ctx.beginPath();
-    ctx.moveTo(chart._crosshairX, top);
-    ctx.lineTo(chart._crosshairX, bottom);
-    ctx.stroke();
-    // Horizontal line snapped to data point Y
-    if (chart._crosshairY != null) {
-      ctx.beginPath();
-      ctx.moveTo(left,  chart._crosshairY);
-      ctx.lineTo(right, chart._crosshairY);
-      ctx.stroke();
-    }
-    ctx.restore();
-  },
-};
-Chart.register(crosshairPlugin);
-
-// ── Custom HTML tooltip for price chart ──────────────
-function priceTooltipHandler({ chart, tooltip }) {
-  const wrapEl = chart.canvas.parentNode;
-
-  // Create tooltip element once
-  let ttEl = wrapEl.querySelector(".price-tt");
-  if (!ttEl) {
-    ttEl = document.createElement("div");
-    ttEl.className = "price-tt";
-    wrapEl.appendChild(ttEl);
-  }
-
-  if (tooltip.opacity === 0) { ttEl.style.opacity = "0"; return; }
-
-  const dp = tooltip.dataPoints?.[0];
-  if (!dp) { ttEl.style.opacity = "0"; return; }
-
-  const idx    = dp.dataIndex;
-  const price  = _activePrices[idx];
-  const volume = _activeVolumes[idx];
-  const prev   = idx > 0 ? _activePrices[idx - 1] : null;
-  const pct    = (prev != null && prev !== 0) ? ((price - prev) / prev) * 100 : null;
-
-  // Format date: "2025-04-12" → "12 Apr 2025"
-  const dateStr = new Date(_activeLabels[idx] + "T12:00:00").toLocaleDateString("en-GB", {
-    day: "numeric", month: "short", year: "numeric",
-  });
-
-  const pctHtml = pct != null
-    ? `<span class="tt-chg ${pct >= 0 ? "pos" : "neg"}">${pct >= 0 ? "▲" : "▼"}&thinsp;${Math.abs(pct).toFixed(2)}%</span>`
-    : `<span class="tt-val">—</span>`;
-
-  ttEl.innerHTML = `
-    <div class="tt-date">${dateStr}</div>
-    <div class="tt-row"><span class="tt-lbl">Price</span><span class="tt-val">${fmt(price, 2)} SEK</span></div>
-    <div class="tt-row"><span class="tt-lbl">Volume</span><span class="tt-val">${volume != null ? Number(volume).toLocaleString("sv-SE") : "—"}</span></div>
-    <div class="tt-row"><span class="tt-lbl">Day change</span>${pctHtml}</div>
-  `;
-
-  // Position relative to the chart-wrap (which is position:relative)
-  const wrapRect   = wrapEl.getBoundingClientRect();
-  const canvasRect = chart.canvas.getBoundingClientRect();
-  const cOffX = canvasRect.left - wrapRect.left;
-  const cOffY = canvasRect.top  - wrapRect.top;
-
-  const GAP  = 14;
-  const ttW  = ttEl.offsetWidth  || 175;
-  const ttH  = ttEl.offsetHeight || 108;
-  const wrapW = wrapEl.offsetWidth;
-  const wrapH = wrapEl.offsetHeight;
-
-  // Default: tooltip to the right of cursor; flip left if it'd overflow
-  let x = cOffX + tooltip.caretX + GAP;
-  if (x + ttW + 6 > wrapW) x = cOffX + tooltip.caretX - GAP - ttW;
-
-  // Vertically centred on the data point; clamped inside wrap
-  let y = cOffY + (chart._crosshairY != null ? chart._crosshairY : tooltip.caretY) - ttH / 2;
-  y = Math.max(4, Math.min(y, wrapH - ttH - 4));
-
-  ttEl.style.left    = x + "px";
-  ttEl.style.top     = y + "px";
-  ttEl.style.opacity = "1";
-}
-
-function mkChart(id, config) {
-  if (_charts[id]) { _charts[id].destroy(); }
-  const ctx = document.getElementById(id);
-  if (!ctx) return;
-  _charts[id] = new Chart(ctx, config);
-}
-
 // ── Helpers ──────────────────────────────────────────
 function fmt(v, decimals = 2, suffix = "") {
   if (v == null || v === "" || isNaN(v)) return "—";
@@ -225,15 +78,6 @@ function showProgress(msg, step, total) {
 function hideStatus() {
   document.getElementById("status-bar").classList.add("hidden");
 }
-
-// ── Range button listener ──────────────────────────────
-document.getElementById("price-range-btns").addEventListener("click", e => {
-  const btn = e.target.closest(".range-btn");
-  if (!btn) return;
-  document.querySelectorAll(".range-btn").forEach(b => b.classList.remove("active"));
-  btn.classList.add("active");
-  drawPriceChart(btn.dataset.range);
-});
 
 // ── Tab switching ─────────────────────────────────────
 document.querySelectorAll(".tab-btn").forEach(btn => {
@@ -462,10 +306,7 @@ function renderDashboard(d) {
   renderRatiosAndKeyFigures(d);
   renderYoY(d);
   renderQoQ(d);
-  renderPriceChart(d);
   renderAnalysis(d);
-  renderPeers(d);
-  renderShareholders(d);
   renderSourceChips(d);
   document.getElementById("last-updated").textContent =
     "Last updated: " + (d.last_updated || "—");
@@ -475,7 +316,6 @@ function renderDashboard(d) {
 function renderSourceChips(d) {
   const src = d.data_sources || {};
   const map = {
-    "price-source-chip":    { icon: "📈", text: src.price_chart },
     "income-source-chip":   { icon: "📄", text: src.financials },
     "bs-source-chip":       { icon: "📄", text: src.financials },
     "cf-source-chip":       { icon: "📄", text: src.financials },
@@ -554,6 +394,43 @@ function renderSummary(d) {
   const co  = d.company || {};
   const rec = d.recommendation || {};
 
+  // Financial highlights strip
+  const pl0 = (d.profit_loss   || []).sort((a, b) => b.year - a.year)[0] || {};
+  const bs0 = (d.balance_sheet || []).sort((a, b) => b.year - a.year)[0] || {};
+  const kf0 = (d.key_figures   || []).sort((a, b) => b.year - a.year)[0] || {};
+  const hlWrap = document.getElementById("summary-highlights");
+  const hlItems = [
+    { label: "Net Interest Income", raw: pl0.nii,               fmt: v => fmtE(toE(v)) + " EURm" },
+    { label: "Total Income",        raw: pl0.revenue,           fmt: v => fmtE(toE(v)) + " EURm" },
+    { label: "Operating Profit",    raw: pl0.operating_profit,  fmt: v => fmtE(toE(v)) + " EURm" },
+    { label: "Net Profit",          raw: pl0.net_income,        fmt: v => fmtE(toE(v)) + " EURm" },
+    { label: "Total Assets",        raw: bs0.total_assets,      fmt: v => fmtE(toE(v)) + " EURm" },
+    { label: "Total Equity",        raw: bs0.equity,            fmt: v => fmtE(toE(v)) + " EURm" },
+    { label: "CET1 Ratio",          raw: kf0.cet1_ratio_pct,    fmt: v => fmt(v, 1) + "%" },
+    { label: "Cost / Income",       raw: kf0.cost_to_income_pct,fmt: v => fmt(v, 1) + "%" },
+    { label: "ROE",                 raw: kf0.roe_pct,           fmt: v => fmt(v, 1) + "%" },
+    { label: "Diluted EPS",         raw: kf0.diluted_eps,       fmt: v => fmt(v, 2) + " SEK" },
+    { label: "Dividend / Share",    raw: kf0.dividend_per_share,fmt: v => fmt(v, 2) + " SEK" },
+    { label: "AuM",                 raw: kf0.aum_bn,            fmt: v => fmt(v, 0) + " bn SEK" },
+  ].filter(x => x.raw != null);
+
+  if (hlItems.length) {
+    const yr = pl0.year || bs0.year || kf0.year || "";
+    hlWrap.innerHTML = `
+      <div class="fin-highlights">
+        <div class="fin-hl-header">Key Highlights${yr ? " — " + yr : ""}</div>
+        <div class="fin-hl-grid">
+          ${hlItems.map(x => `
+            <div class="fin-hl-item">
+              <div class="fin-hl-label">${x.label}</div>
+              <div class="fin-hl-value">${x.fmt(x.raw)}</div>
+            </div>`).join("")}
+        </div>
+      </div>`;
+  } else {
+    hlWrap.innerHTML = "";
+  }
+
   const descEl = document.getElementById("company-desc");
   if (co.description) {
     descEl.textContent = co.description;
@@ -606,164 +483,37 @@ function renderSummary(d) {
   if (!d.opportunities || d.opportunities.length === 0) ol.innerHTML = '<li style="color:var(--text3)">None identified.</li>';
 }
 
-// ── PRICE CHART ───────────────────────────────────────
-function renderPriceChart(d) {
-  _chartData = d.chart || {};
-  const hasData = (_chartData.prices || []).length > 0;
-  const priceTab = document.getElementById("tab-price");
-  if (priceTab) {
-    const empty = priceTab.querySelector(".chart-empty-msg") || (() => {
-      const el = document.createElement("p");
-      el.className = "chart-empty-msg";
-      el.style.cssText = "color:var(--text-muted,#888);text-align:center;padding:40px 0;";
-      el.textContent = "Price chart data is not available.";
-      priceTab.appendChild(el);
-      return el;
-    })();
-    empty.style.display = hasData ? "none" : "block";
-    priceTab.querySelector(".chart-header-row").style.display = hasData ? "" : "none";
-    priceTab.querySelector(".chart-wrap.tall").style.display = hasData ? "" : "none";
-    priceTab.querySelector("h3.section-heading[style]").style.display = hasData ? "" : "none";
-    priceTab.querySelector(".chart-wrap.short").style.display = hasData ? "" : "none";
-  }
-  if (!hasData) return;
-  // Reset active range button to 1Y
-  document.querySelectorAll(".range-btn").forEach(b => {
-    b.classList.toggle("active", b.dataset.range === "1Y");
-  });
-  drawPriceChart("1Y");
-}
-
-function drawPriceChart(range) {
-  if (!_chartData) return;
-
-  const allLabels  = _chartData.labels  || [];
-  const allPrices  = _chartData.prices  || [];
-  const allVolumes = _chartData.volumes || [];
-
-  const counts = { "1W": 5, "1M": 21, "3M": 63, "6M": 126, "1Y": 252, "5Y": 1260 };
-  const n = counts[range] || allLabels.length;
-
-  // Store sliced data globally so the tooltip handler can read them
-  _activeLabels  = allLabels.slice(-n);
-  _activePrices  = allPrices.slice(-n);
-  _activeVolumes = allVolumes.slice(-n);
-
-  // Remove stale tooltip div before recreating chart
-  const priceCanvas = document.getElementById("chart-price");
-  if (priceCanvas) {
-    const old = priceCanvas.parentNode.querySelector(".price-tt");
-    if (old) old.remove();
-  }
-
-  mkChart("chart-price", {
-    type: "line",
-    data: {
-      labels: _activeLabels,
-      datasets: [{
-        label: "Price (SEK)",
-        data: _activePrices,
-        borderColor: C.blue,
-        backgroundColor: "rgba(79,126,255,0.08)",
-        borderWidth: 1.5,
-        fill: true,
-        tension: 0.3,
-        // Invisible by default; dot appears only on hover
-        pointRadius: 0,
-        pointHitRadius: 20,
-        pointHoverRadius: 5,
-        pointHoverBackgroundColor: C.blue,
-        pointHoverBorderColor: "#ffffff",
-        pointHoverBorderWidth: 2,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: { display: false },
-        // Disable built-in tooltip; use custom HTML card instead
-        tooltip: { enabled: false, external: priceTooltipHandler },
-        crosshair: { enabled: true },
-      },
-      scales: {
-        x: {
-          grid: { color: GRID_COLOR },
-          ticks: { maxTicksLimit: 12, maxRotation: 0, color: LABEL_COLOR },
-        },
-        y: {
-          grid: { color: GRID_COLOR },
-          ticks: { color: LABEL_COLOR },
-        },
-      },
-    },
-  });
-
-  mkChart("chart-volume", {
-    type: "bar",
-    data: {
-      labels: _activeLabels,
-      datasets: [{
-        label: "Volume",
-        data: _activeVolumes,
-        backgroundColor: "rgba(79,126,255,0.35)",
-        hoverBackgroundColor: "rgba(79,126,255,0.65)",
-        borderWidth: 0,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: { enabled: false },
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { maxTicksLimit: 12, color: LABEL_COLOR } },
-        y: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR } },
-      },
-    },
-  });
-}
-
 // ── INCOME STATEMENT TAB ─────────────────────────────
 function renderIncomeStatement(d) {
   const pl   = (d.profit_loss || []).sort((a, b) => a.year - b.year).slice(-5);
-  console.log("[income] profit_loss rows:", pl.length, pl[0] || null);
   const wrap = document.getElementById("income-table-wrap");
   if (!pl.length) { wrap.innerHTML = '<p class="empty-state">No income statement data available.</p>'; return; }
 
   const years = pl.map(r => r.year);
   const g = key => pl.map(r => toE(r[key] ?? null));
 
-  // Derived rows: total expenses = revenue − op_income; tax = op_income − net_income
-  const expVals = pl.map(r =>
-    r.revenue != null && r.operating_income != null ? toE(r.revenue - r.operating_income) : null
-  );
-  const taxVals = pl.map(r =>
-    r.operating_income != null && r.net_income != null ? toE(r.operating_income - r.net_income) : null
-  );
-
   const rows = [
     { type: 'section', label: 'INCOME' },
-    { type: 'sub',   label: 'Net interest income',           vals: g('nii') },
-    { type: 'sub',   label: 'Net fee & commission income',   vals: g('fee_income') },
-    { type: 'sub',   label: 'Net insurance result',          vals: g('insurance_result') },
-    { type: 'sub',   label: 'Fair value result',             vals: g('fair_value') },
-    { type: 'sub',   label: 'Other income',                  vals: g('other_income') },
-    { type: 'total', label: 'Total Operating Income',        vals: g('revenue') },
+    { type: 'sub',   label: 'Net interest income',              vals: g('nii') },
+    { type: 'sub',   label: 'Net fee & commission income',      vals: g('fee_income') },
+    { type: 'sub',   label: 'Net insurance result',             vals: g('insurance_result') },
+    { type: 'sub',   label: 'Fair value result',                vals: g('fair_value') },
+    { type: 'sub',   label: 'Other income',                     vals: g('other_income') },
+    { type: 'total', label: 'Total Operating Income',           vals: g('revenue') },
 
     { type: 'section', label: 'EXPENSES' },
-    { type: 'sub',   label: 'Staff costs',                   vals: g('staff_costs'),    lowerIsBetter: true },
-    { type: 'sub',   label: 'Other expenses',                vals: g('other_expenses'), lowerIsBetter: true },
-    { type: 'sub',   label: 'Regulatory fees',               vals: g('reg_fees'),       lowerIsBetter: true },
-    { type: 'sub',   label: 'Depreciation & Amortisation',   vals: g('da'),             lowerIsBetter: true },
-    { type: 'total', label: 'Total Expenses',                vals: expVals,             lowerIsBetter: true },
+    { type: 'sub',   label: 'Staff costs',                      vals: g('staff_costs'),               lowerIsBetter: true },
+    { type: 'sub',   label: 'Other expenses',                   vals: g('other_expenses'),            lowerIsBetter: true },
+    { type: 'sub',   label: 'Regulatory fees',                  vals: g('reg_fees'),                  lowerIsBetter: true },
+    { type: 'sub',   label: 'Depreciation & Amortisation',      vals: g('da'),                        lowerIsBetter: true },
+    { type: 'total', label: 'Total Expenses',                   vals: g('total_expenses'),            lowerIsBetter: true },
 
-    { type: 'major', label: 'Operating Profit',              vals: g('operating_income') },
-    { type: 'sub',   label: 'Tax',                           vals: taxVals,             lowerIsBetter: true },
-    { type: 'major', label: 'Net Profit',                    vals: g('net_income') },
+    { type: 'major', label: 'Profit Before Loan Losses',        vals: g('profit_before_loan_losses') },
+    { type: 'sub',   label: 'Net result items at fair value',   vals: g('net_result_loans_fv') },
+    { type: 'sub',   label: 'Net loan losses',                  vals: g('net_loan_losses'),           lowerIsBetter: true },
+    { type: 'major', label: 'Operating Profit',                 vals: g('operating_profit') },
+    { type: 'sub',   label: 'Income tax',                       vals: g('income_tax'),                lowerIsBetter: true },
+    { type: 'major', label: 'Net Profit',                       vals: g('net_income') },
   ];
 
   wrap.innerHTML = buildFinTable(rows, years, { showYoY: true, showCagr: true });
@@ -780,29 +530,37 @@ function renderBalanceSheet(d) {
 
   const rows = [
     { type: 'section', label: 'ASSETS' },
-    { type: 'sub',   label: 'Cash & equivalents',       vals: g('cash') },
-    { type: 'sub',   label: 'Loans & receivables',      vals: g('loans') },
-    { type: 'sub',   label: 'Financial investments',    vals: g('investments') },
-    { type: 'sub',   label: 'Other assets',             vals: g('other_assets') },
-    { type: 'total', label: 'Total Assets',             vals: g('total_assets') },
+    { type: 'sub',   label: 'Cash & balances with central banks',  vals: g('cash_central_banks') },
+    { type: 'sub',   label: 'Loans to credit institutions',        vals: g('loans_credit_institutions') },
+    { type: 'sub',   label: 'Loans to the public',                 vals: g('loans_public') },
+    { type: 'sub',   label: 'Securities',                          vals: g('securities') },
+    { type: 'sub',   label: 'Pooled unit-linked assets',           vals: g('pooled_unit_linked') },
+    { type: 'sub',   label: 'Derivatives',                         vals: g('derivatives_assets') },
+    { type: 'sub',   label: 'Other assets',                        vals: g('other_assets') },
+    { type: 'total', label: 'Total Assets',                        vals: g('total_assets') },
 
     { type: 'section', label: 'LIABILITIES' },
-    { type: 'sub',   label: 'Customer deposits',        vals: g('deposits'),            lowerIsBetter: true },
-    { type: 'sub',   label: 'Issued securities',        vals: g('issued_sec'),          lowerIsBetter: true },
-    { type: 'sub',   label: 'Total Debt',               vals: g('total_debt'),          lowerIsBetter: true },
-    { type: 'sub',   label: 'Other liabilities',        vals: g('other_liab'),          lowerIsBetter: true },
-    { type: 'total', label: 'Total Liabilities',        vals: g('total_liabilities'),   lowerIsBetter: true },
+    { type: 'sub',   label: 'Deposits from credit institutions',   vals: g('deposits_credit_institutions'), lowerIsBetter: true },
+    { type: 'sub',   label: 'Deposits from the public',            vals: g('deposits_public'),              lowerIsBetter: true },
+    { type: 'sub',   label: 'Deposits pooled (unit-linked)',       vals: g('deposits_pooled'),              lowerIsBetter: true },
+    { type: 'sub',   label: 'Insurance liabilities',               vals: g('insurance_liabilities'),        lowerIsBetter: true },
+    { type: 'sub',   label: 'Debt securities issued',              vals: g('debt_securities'),              lowerIsBetter: true },
+    { type: 'sub',   label: 'Derivatives',                         vals: g('derivatives_liabilities'),      lowerIsBetter: true },
+    { type: 'sub',   label: 'Subordinated liabilities',            vals: g('subordinated_liabilities'),     lowerIsBetter: true },
+    { type: 'sub',   label: 'Other liabilities',                   vals: g('other_liabilities'),            lowerIsBetter: true },
+    { type: 'total', label: 'Total Liabilities',                   vals: g('total_liabilities'),            lowerIsBetter: true },
 
     { type: 'section', label: 'EQUITY' },
-    { type: 'major', label: 'Total Equity',             vals: g('equity') },
+    { type: 'major', label: 'Total Equity',                        vals: g('equity') },
+    { type: 'total', label: 'Total Liabilities & Equity',          vals: g('total_liabilities_equity') },
   ];
 
-  wrap.innerHTML = buildFinTable(rows, years, { showDelta: true, showYoY: true });
+  wrap.innerHTML = buildFinTable(rows, years, { showYoY: true });
 }
 
 // ── CASH FLOW TAB ─────────────────────────────────────
 function renderCashFlow(d) {
-  const cf   = (d.cash_flow || []).sort((a, b) => a.year - b.year).slice(-2);
+  const cf   = (d.cash_flow || []).sort((a, b) => a.year - b.year).slice(-5);
   const wrap = document.getElementById("cf-table-wrap");
   if (!cf.length) { wrap.innerHTML = '<p class="empty-state">No cash flow data available.</p>'; return; }
 
@@ -810,118 +568,169 @@ function renderCashFlow(d) {
   const g = key => cf.map(r => toE(r[key] ?? null));
 
   const rows = [
-    { type: 'sub',   label: 'Operating Cash Flow',  vals: g('operating_cf') },
-    { type: 'sub',   label: 'Investing Cash Flow',  vals: g('investing_cf') },
-    { type: 'sub',   label: 'Financing Cash Flow',  vals: g('financing_cf') },
-    { type: 'sub',   label: 'Capital Expenditure',  vals: g('capex'),       lowerIsBetter: true },
-    { type: 'major', label: 'Free Cash Flow',        vals: g('free_cf') },
+    { type: 'section', label: 'OPERATING ACTIVITIES' },
+    { type: 'sub',   label: 'Operating profit',               vals: g('operating_profit_cf') },
+    { type: 'sub',   label: 'Non-cash adjustments',           vals: g('non_cash_adjustments') },
+    { type: 'sub',   label: 'Income taxes paid',              vals: g('income_taxes_paid'),     lowerIsBetter: true },
+    { type: 'total', label: 'Cash flow before changes',       vals: g('cf_before_changes') },
+    { type: 'sub',   label: 'Change in loans to public',      vals: g('change_loans_public') },
+    { type: 'sub',   label: 'Change in deposits from public', vals: g('change_deposits_public') },
+
+    { type: 'section', label: 'INVESTING ACTIVITIES' },
+    { type: 'sub',   label: 'CapEx — Property & equipment',  vals: g('capex_ppe'),             lowerIsBetter: true },
+    { type: 'sub',   label: 'CapEx — Intangibles',           vals: g('capex_intangibles'),     lowerIsBetter: true },
+
+    { type: 'section', label: 'FINANCING ACTIVITIES' },
+    { type: 'sub',   label: 'Dividends paid',                vals: g('dividend_paid'),         lowerIsBetter: true },
+    { type: 'sub',   label: 'Share repurchases',             vals: g('share_repurchase'),      lowerIsBetter: true },
+    { type: 'sub',   label: 'Issued subordinated debt',      vals: g('issued_subordinated') },
+
+    { type: 'major', label: 'Net Cash Flow',                 vals: g('net_cash_flow') },
   ];
 
-  wrap.innerHTML = buildFinTable(rows, years, { showDelta: true, showYoY: true });
+  wrap.innerHTML = buildFinTable(rows, years, { showYoY: true });
 }
 
 // ── RATIOS & KEY FIGURES TAB ──────────────────────────
 function renderRatiosAndKeyFigures(d) {
-  const r   = d.ratios  || {};
-  const mkt = d.market  || {};
-  const co  = d.company || {};
-  const pl  = (d.profit_loss  || []).sort((a, b) => a.year - b.year);
-
-  // Compute margin trends from multi-year P&L
-  const nmVals = pl.map(row =>
-    row.revenue && row.net_income ? row.net_income / row.revenue * 100 : null
-  );
-  const omVals = pl.map(row =>
-    row.revenue && row.operating_income ? row.operating_income / row.revenue * 100 : null
-  );
-  const nmArrow = trendArrow(nmVals[nmVals.length - 1], nmVals[nmVals.length - 2]);
-  const omArrow = trendArrow(omVals[omVals.length - 1], omVals[omVals.length - 2]);
-
+  const kf  = (d.key_figures || []).sort((a, b) => a.year - b.year).slice(-5);
   const wrap = document.getElementById("ratios-wrap");
+  wrap.innerHTML = "";
+
+  if (!kf.length) {
+    wrap.innerHTML = '<p class="empty-state">No key figures data available.</p>';
+    return;
+  }
+
+  const years = kf.map(r => r.year);
+
+  const buildKfTable = (title, fieldRows) => {
+    const hasData = fieldRows.some(r => kf.some(row => row[r.key] != null));
+    if (!hasData) return "";
+    let h = `<div class="kf-section"><div class="kf-section-title">${title}</div>`;
+    h += '<div class="fin-table-wrap"><table class="fin-table"><thead><tr><th></th>';
+    years.forEach(y => { h += `<th>${y}</th>`; });
+    h += '</tr></thead><tbody>';
+    for (const r of fieldRows) {
+      if (!kf.some(row => row[r.key] != null)) continue;
+      h += `<tr class="fin-sub"><td>${r.label}</td>`;
+      kf.forEach(row => {
+        const v = row[r.key];
+        h += `<td>${v != null ? r.fmt(v) : "—"}</td>`;
+      });
+      h += '</tr>';
+    }
+    h += '</tbody></table></div></div>';
+    return h;
+  };
+
   wrap.innerHTML =
-    ratioSection("Per Share Data", [
-      ["EPS",                    r.eps,               v => fmt(v, 2) + " SEK"],
-      ["Dividend Per Share",     r.dividend_per_share,v => fmt(v, 2) + " SEK"],
-      ["P/E Ratio",              r.pe,                fmtPE],
-      ["Forward P/E",            r.forward_pe,        fmtPE],
-      ["P/B Ratio",              r.pb,                fmtPE],
-      ["P/S Ratio",              r.ps,                fmtPE],
+    buildKfTable("Per Share Data", [
+      { label: "Basic EPS",            key: "basic_eps",            fmt: v => fmt(v, 2) + " SEK" },
+      { label: "Diluted EPS",          key: "diluted_eps",          fmt: v => fmt(v, 2) + " SEK" },
+      { label: "Dividend per share",   key: "dividend_per_share",   fmt: v => fmt(v, 2) + " SEK" },
+      { label: "Equity per share",     key: "equity_per_share",     fmt: v => fmt(v, 2) + " SEK" },
+      { label: "Share price",          key: "share_price",          fmt: v => fmt(v, 2) + " SEK" },
+      { label: "Shares outstanding",   key: "shares_outstanding_m", fmt: v => fmt(v, 0) + " m" },
     ]) +
-    ratioSection("Profitability", [
-      ["Return on Equity (ROE)", r.roe,               fmtPct],
-      ["Return on Assets (ROA)", r.roa,               fmtPct],
-      ["Net Margin",             r.net_margin,        fmtPct, nmArrow],
-      ["Operating Margin",       r.operating_margin,  fmtPct, omArrow],
-      ["Gross Margin",           r.gross_margin,      fmtPct],
+    buildKfTable("Performance", [
+      { label: "Return on Equity (ROE)",    key: "roe_pct",                fmt: v => fmt(v, 1) + "%" },
+      { label: "Cost / Income",             key: "cost_to_income_pct",     fmt: v => fmt(v, 1) + "%" },
+      { label: "Net loan loss ratio",       key: "net_loan_loss_ratio_pct",fmt: v => fmt(v, 2) + "%" },
+      { label: "Assets under Management",  key: "aum_bn",                 fmt: v => fmt(v, 0) + " bn SEK" },
     ]) +
-    ratioSection("Capital Adequacy & Income", [
-      ["Dividend Yield",         r.dividend_yield,    fmtPct],
-      ["Payout Ratio",           r.payout_ratio,      fmtPct],
-      ["Debt / Equity",          r.debt_to_equity,    v => fmt(v, 1) + "x"],
-      ["Beta (Market Risk)",     r.beta ?? mkt.beta,  v => fmt(v, 2)],
-      ["Current Ratio",          r.current_ratio,     v => fmt(v, 2)],
-    ]) +
-    ratioSection("Workforce", [
-      ["Full-time Employees",    co.employees,        v => Number(v).toLocaleString("sv-SE")],
+    buildKfTable("Capital Adequacy", [
+      { label: "CET1 Ratio",            key: "cet1_ratio_pct",         fmt: v => fmt(v, 1) + "%" },
+      { label: "Tier 1 Ratio",          key: "tier1_ratio_pct",        fmt: v => fmt(v, 1) + "%" },
+      { label: "Total Capital Ratio",   key: "total_capital_ratio_pct",fmt: v => fmt(v, 1) + "%" },
+      { label: "Tier 1 Capital",        key: "tier1_capital",          fmt: v => fmtE(toE(v)) + " EURm" },
+      { label: "Risk-weighted Assets",  key: "rea",                    fmt: v => fmtE(toE(v)) + " EURm" },
+      { label: "Employees",             key: "employees",              fmt: v => Number(v).toLocaleString("sv-SE") },
     ]);
 }
 
 // ── YOY ANALYSIS TAB ─────────────────────────────────
 function renderYoY(d) {
-  const pl   = (d.profit_loss   || []).sort((a, b) => a.year - b.year);
-  const bs   = (d.balance_sheet || []).sort((a, b) => a.year - b.year);
-  const cf   = (d.cash_flow     || []).sort((a, b) => a.year - b.year);
+  const pl  = (d.profit_loss   || []).sort((a, b) => a.year - b.year);
+  const bs  = (d.balance_sheet || []).sort((a, b) => a.year - b.year);
+  const kf  = (d.key_figures   || []).sort((a, b) => a.year - b.year);
   const wrap = document.getElementById("yoy-table-wrap");
 
-  if (pl.length < 2) {
+  const allYears = [...new Set([
+    ...pl.map(r => r.year),
+    ...bs.map(r => r.year),
+    ...kf.map(r => r.year),
+  ])].sort((a, b) => a - b).slice(-6);
+
+  if (allYears.length < 2) {
     wrap.innerHTML = '<p class="empty-state">Need at least 2 years of data for YoY analysis.</p>';
     return;
   }
 
-  const curr   = pl[pl.length - 1],  prev   = pl[pl.length - 2];
-  const bsC    = bs[bs.length - 1] || {}, bsP = bs[bs.length - 2] || {};
-  const cfC    = cf[cf.length - 1] || {}, cfP = cf[cf.length - 2] || {};
-  const prevY  = String(prev.year), currY = String(curr.year);
+  const plMap = Object.fromEntries(pl.map(r => [r.year, r]));
+  const bsMap = Object.fromEntries(bs.map(r => [r.year, r]));
+  const kfMap = Object.fromEntries(kf.map(r => [r.year, r]));
 
-  const mkRow = (label, cV, pV, lb = false, type = 'sub') =>
-    ({ label, curr: toE(cV), prev: toE(pV), lb, type });
+  // Header: label | yr0 | Δ% | yr1 | Δ% | ... | yrN
+  const nDelta = allYears.length - 1;
+  const colSpan = 1 + allYears.length + nDelta;
 
-  const groups = [
-    { section: 'INCOME STATEMENT' },
-    mkRow("Total Operating Income", curr.revenue,           prev.revenue,           false, 'total'),
-    mkRow("Operating Profit",       curr.operating_income,  prev.operating_income,  false, 'major'),
-    mkRow("Net Profit",             curr.net_income,        prev.net_income,        false, 'major'),
-    mkRow("EBITDA",                 curr.ebitda,            prev.ebitda),
-
-    { section: 'BALANCE SHEET' },
-    mkRow("Total Assets",           bsC.total_assets,       bsP.total_assets,       false, 'total'),
-    mkRow("Total Liabilities",      bsC.total_liabilities,  bsP.total_liabilities,  true,  'total'),
-    mkRow("Total Equity",           bsC.equity,             bsP.equity,             false, 'major'),
-    mkRow("Cash & Equivalents",     bsC.cash,               bsP.cash),
-
-    { section: 'CASH FLOW' },
-    mkRow("Operating Cash Flow",    cfC.operating_cf,       cfP.operating_cf,       false, 'total'),
-    mkRow("Free Cash Flow",         cfC.free_cf,            cfP.free_cf,            false, 'major'),
-    mkRow("Capital Expenditure",    cfC.capex,              cfP.capex,              true),
-  ];
-
-  let h = '<div class="fin-table-wrap"><table class="fin-table"><thead><tr>';
-  h += `<th>EURm</th><th>${prevY}</th><th>${currY}</th><th>Δ EURm</th><th>YoY %</th>`;
+  let h = '<div class="fin-table-wrap"><table class="fin-table yoy-table"><thead><tr><th>EURm</th>';
+  allYears.forEach((y, i) => {
+    h += `<th>${y}</th>`;
+    if (i < nDelta) h += '<th class="fin-delta-hdr">Δ%</th>';
+  });
   h += '</tr></thead><tbody>';
 
-  for (const row of groups) {
-    if (row.section) {
-      h += `<tr class="fin-section-header"><td colspan="5">${row.section}</td></tr>`;
-      continue;
-    }
-    const cls = row.type === 'major' ? 'fin-major'
-              : row.type === 'total' ? 'fin-total' : 'fin-sub';
-    h += `<tr class="${cls}"><td>${row.label}</td>`;
-    h += `<td>${fmtE(row.prev)}</td><td>${fmtE(row.curr)}</td>`;
-    h += deltaAbsCell(row.curr, row.prev, row.lb);
-    h += deltaYoYCell(row.curr, row.prev, row.lb);
+  const addSection = label => {
+    h += `<tr class="fin-section-header"><td colspan="${colSpan}">${label}</td></tr>`;
+  };
+
+  const addRow = (label, getVal, rowType = 'fin-sub', lb = false) => {
+    const vals = allYears.map(y => getVal(y));
+    if (vals.every(v => v == null)) return;
+    h += `<tr class="${rowType}"><td>${label}</td>`;
+    vals.forEach((v, i) => {
+      h += `<td>${fmtE(v)}</td>`;
+      if (i < nDelta) h += deltaYoYCell(vals[i + 1], v, lb);
+    });
     h += '</tr>';
-  }
+  };
+
+  const addRatioRow = (label, getVal, fmtFn, lb = false) => {
+    const vals = allYears.map(y => getVal(y));
+    if (vals.every(v => v == null)) return;
+    h += `<tr class="fin-sub"><td>${label}</td>`;
+    vals.forEach((v, i) => {
+      h += `<td>${v != null ? fmtFn(v) : "—"}</td>`;
+      if (i < nDelta) h += deltaYoYCell(vals[i + 1], v, lb);
+    });
+    h += '</tr>';
+  };
+
+  addSection('INCOME STATEMENT');
+  addRow('Total Operating Income',      y => toE((plMap[y] || {}).revenue),                  'fin-total');
+  addRow('Total Expenses',              y => toE((plMap[y] || {}).total_expenses),            'fin-sub', true);
+  addRow('Profit Before Loan Losses',   y => toE((plMap[y] || {}).profit_before_loan_losses), 'fin-sub');
+  addRow('Net Loan Losses',             y => toE((plMap[y] || {}).net_loan_losses),           'fin-sub', true);
+  addRow('Operating Profit',            y => toE((plMap[y] || {}).operating_profit),          'fin-major');
+  addRow('Net Profit',                  y => toE((plMap[y] || {}).net_income),                'fin-major');
+
+  addSection('BALANCE SHEET');
+  addRow('Total Assets',                y => toE((bsMap[y] || {}).total_assets),              'fin-total');
+  addRow('Loans to the public',         y => toE((bsMap[y] || {}).loans_public));
+  addRow('Deposits from the public',    y => toE((bsMap[y] || {}).deposits_public),           'fin-sub', true);
+  addRow('Total Liabilities',           y => toE((bsMap[y] || {}).total_liabilities),         'fin-total', true);
+  addRow('Total Equity',                y => toE((bsMap[y] || {}).equity),                    'fin-major');
+
+  addSection('KEY RATIOS');
+  addRatioRow('CET1 Ratio',      y => (kfMap[y] || {}).cet1_ratio_pct,         v => fmt(v, 1) + "%");
+  addRatioRow('ROE',             y => (kfMap[y] || {}).roe_pct,                v => fmt(v, 1) + "%");
+  addRatioRow('Cost / Income',   y => (kfMap[y] || {}).cost_to_income_pct,     v => fmt(v, 1) + "%", true);
+  addRatioRow('Net Loan Loss %', y => (kfMap[y] || {}).net_loan_loss_ratio_pct,v => fmt(v, 2) + "%", true);
+  addRatioRow('Diluted EPS',     y => (kfMap[y] || {}).diluted_eps,            v => fmt(v, 2) + " SEK");
+  addRatioRow('Dividend/Share',  y => (kfMap[y] || {}).dividend_per_share,     v => fmt(v, 2) + " SEK");
+
   h += '</tbody></table></div>';
   wrap.innerHTML = h;
 }
@@ -964,67 +773,6 @@ function renderQoQ(d) {
   wrap.innerHTML = h;
 }
 
-// ── SHAREHOLDERS ──────────────────────────────────────
-function renderShareholders(d) {
-  const investors = d.investors || [];
-
-  if (!investors.length) {
-    document.getElementById("sh-table-wrap").innerHTML =
-      '<p class="empty-state">No institutional holder data available.</p>';
-    return;
-  }
-
-  document.getElementById("sh-table-wrap").innerHTML = makeTable(
-    ["Holder", "Shares", "% Out", "Value (MSEK)"],
-    investors.map(r => [
-      r.name,
-      r.shares ? Number(r.shares).toLocaleString("sv-SE") : "—",
-      fmtPct(r.pct),
-      fmtM(r.value),
-    ])
-  );
-
-  // Donut chart (top 8 + other)
-  const top8 = investors.slice(0, 8);
-  const topPct = top8.reduce((s, r) => s + (r.pct || 0), 0);
-  const labels = top8.map(r => r.name);
-  const data   = top8.map(r => r.pct || 0);
-  if (topPct < 95) {
-    labels.push("Other");
-    data.push(Math.max(0, 100 - topPct));
-  }
-
-  const palette = [C.blue, C.teal, C.green, C.purple, C.orange, C.yellow, C.red, C.gray, "#60a5fa", "#a78bfa"];
-
-  mkChart("chart-shareholders", {
-    type: "doughnut",
-    data: {
-      labels,
-      datasets: [{
-        data,
-        backgroundColor: palette.slice(0, labels.length),
-        borderColor: "#0d1117",
-        borderWidth: 2,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: "right",
-          labels: { color: LABEL_COLOR, font: { size: 10 }, boxWidth: 12, padding: 10 },
-        },
-        tooltip: {
-          callbacks: {
-            label: ctx => ` ${ctx.label}: ${fmt(ctx.raw, 2)}%`,
-          },
-        },
-      },
-    },
-  });
-}
-
 // ── AI ANALYSIS TAB ───────────────────────────────────
 function renderAnalysis(d) {
   document.getElementById("analysis-text").textContent =
@@ -1047,59 +795,6 @@ function renderAnalysis(d) {
   });
   if (!d.news || !d.news.length)
     nl.innerHTML = '<p class="empty-state">No news available.</p>';
-}
-
-// ── PEERS TAB ─────────────────────────────────────────
-function renderPeers(d) {
-  const peers = d.peers || [];
-  const wrap  = document.getElementById("peers-table-wrap");
-
-  if (!peers.length) {
-    wrap.innerHTML = '<p class="empty-state">No peer data available.</p>';
-    return;
-  }
-
-  let h = '<div class="fin-table-wrap"><table class="fin-table"><thead><tr>';
-  h += '<th>Company</th><th>Ticker</th><th>Relationship</th>';
-  h += '<th>P/E</th><th>ROE %</th><th>Div Yield %</th><th>Rev Growth %</th>';
-  h += '</tr></thead><tbody>';
-
-  for (const p of peers) {
-    const rgCls = p.revenue_growth_pct > 0 ? "delta-pos"
-                : p.revenue_growth_pct < 0 ? "delta-neg" : "";
-    const dyFmt = p.dividend_yield_pct != null
-      ? `<span class="delta-pos">${fmtPct(p.dividend_yield_pct)}</span>` : "—";
-    const rgFmt = p.revenue_growth_pct != null
-      ? `<span class="${rgCls}">${p.revenue_growth_pct >= 0 ? "+" : ""}${fmt(p.revenue_growth_pct, 1)}%</span>` : "—";
-
-    h += '<tr class="fin-sub">';
-    h += `<td style="color:var(--text);font-weight:500">${p.name || "—"}</td>`;
-    h += `<td style="color:var(--accent);font-family:monospace;font-size:0.8rem">${p.ticker || "—"}</td>`;
-    h += `<td style="color:var(--text3);font-size:0.78rem">${p.relationship || "—"}</td>`;
-    h += `<td>${p.pe != null ? fmtPE(p.pe) : "—"}</td>`;
-    h += `<td>${p.roe_pct != null ? fmtPct(p.roe_pct) : "—"}</td>`;
-    h += `<td>${dyFmt}</td>`;
-    h += `<td>${rgFmt}</td>`;
-    h += '</tr>';
-  }
-  h += '</tbody></table></div>';
-  wrap.innerHTML = h;
-}
-
-// ── Chart helpers ─────────────────────────────────────
-function barOpts() {
-  return {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { labels: { color: LABEL_COLOR, boxWidth: 12, padding: 14, font: { size: 11 } } },
-      tooltip: { mode: "index", intersect: false },
-    },
-    scales: {
-      x: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR } },
-      y: { grid: { color: GRID_COLOR }, ticks: { color: LABEL_COLOR } },
-    },
-  };
 }
 
 function makeTable(headers, rows) {
@@ -1261,11 +956,79 @@ async function extractPdfText(file) {
   return parts.join("\n\n");
 }
 
+// ── Upload state ──────────────────────────────────────
+// Each entry: { file: File, year: number, reportType: "annual"|"quarterly", quarter: "Q1"|…|"Q4" }
+let _uploadFiles = [];
+const _CURRENT_YEAR = new Date().getFullYear();
+
+function _yearOptions(selected) {
+  let html = "";
+  for (let y = _CURRENT_YEAR; y >= 2015; y--) {
+    html += `<option value="${y}"${y === selected ? " selected" : ""}>${y}</option>`;
+  }
+  return html;
+}
+
+function _renderUploadFileList() {
+  const list = document.getElementById("up-file-list");
+  if (!_uploadFiles.length) {
+    list.innerHTML = '<p class="up-empty">No files added yet. Click "+ Add PDF files" to begin.</p>';
+    return;
+  }
+  list.innerHTML = "";
+  _uploadFiles.forEach((item, i) => {
+    const entry = document.createElement("div");
+    entry.className = "up-file-entry";
+    entry.innerHTML = `
+      <div class="up-file-info">
+        <span class="up-file-name" title="${item.file.name}">${item.file.name}</span>
+        <button class="up-file-remove" onclick="_removeUploadFile(${i})" aria-label="Remove">✕</button>
+      </div>
+      <div class="up-file-meta">
+        <select class="up-sel up-year" onchange="_uploadFiles[${i}].year=+this.value">
+          ${_yearOptions(item.year)}
+        </select>
+        <select class="up-sel up-rtype" onchange="_setUploadRtype(${i},this.value)">
+          <option value="annual"${item.reportType==="annual"?" selected":""}>Annual</option>
+          <option value="quarterly"${item.reportType==="quarterly"?" selected":""}>Quarterly</option>
+        </select>
+        <select class="up-sel up-quarter"
+                style="display:${item.reportType==="quarterly"?"":"none"}"
+                onchange="_uploadFiles[${i}].quarter=this.value">
+          <option value="Q1"${item.quarter==="Q1"?" selected":""}>Q1</option>
+          <option value="Q2"${item.quarter==="Q2"?" selected":""}>Q2</option>
+          <option value="Q3"${item.quarter==="Q3"?" selected":""}>Q3</option>
+          <option value="Q4"${item.quarter==="Q4"?" selected":""}>Q4</option>
+        </select>
+      </div>
+    `;
+    list.appendChild(entry);
+  });
+}
+
+function _removeUploadFile(idx) {
+  _uploadFiles.splice(idx, 1);
+  _renderUploadFileList();
+}
+
+function _setUploadRtype(idx, val) {
+  _uploadFiles[idx].reportType = val;
+  _renderUploadFileList();
+}
+
+document.getElementById("up-file-input").addEventListener("change", e => {
+  Array.from(e.target.files).forEach(f => {
+    _uploadFiles.push({ file: f, year: _CURRENT_YEAR, reportType: "annual", quarter: "Q1" });
+  });
+  _renderUploadFileList();
+  e.target.value = "";
+});
+
 function openUpload() {
-  // Pre-fill ticker from the search box if a stock is loaded
   const loaded = document.getElementById("ticker-input").value.trim().toUpperCase();
   const upTicker = document.getElementById("up-ticker");
   if (loaded && !upTicker.value) upTicker.value = loaded;
+  _renderUploadFileList();
   document.getElementById("upload-overlay").classList.remove("hidden");
   upTicker.focus();
 }
@@ -1278,95 +1041,121 @@ function closeUploadOnOverlay(e) {
   if (e.target === document.getElementById("upload-overlay")) closeUpload();
 }
 
-// Add Escape key support alongside existing feedback handler
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") closeUpload();
 }, { capture: false });
 
-document.getElementById("upload-form").addEventListener("submit", async e => {
-  e.preventDefault();
-
-  const ticker     = document.getElementById("up-ticker").value.trim().toUpperCase();
-  const reportType = document.querySelector('input[name="report_type"]:checked')?.value;
-  const period     = document.getElementById("up-period").value.trim();
-  const fileInput  = document.getElementById("up-file");
-  const errorEl    = document.getElementById("up-error");
-  const successEl  = document.getElementById("up-success");
-  const submitBtn  = document.getElementById("up-submit-btn");
+async function submitUpload() {
+  const ticker    = document.getElementById("up-ticker").value.trim().toUpperCase();
+  const errorEl   = document.getElementById("up-error");
+  const successEl = document.getElementById("up-success");
+  const submitBtn = document.getElementById("up-submit-btn");
+  const progressEl   = document.getElementById("up-progress");
+  const progressText = document.getElementById("up-progress-text");
+  const progressFill = document.getElementById("up-progress-fill");
 
   errorEl.classList.add("hidden");
   errorEl.textContent = "";
 
-  if (!ticker)                           { showUploadError("Ticker is required.");          return; }
-  if (!period)                           { showUploadError("Period is required.");           return; }
-  if (!fileInput.files || !fileInput.files[0]) { showUploadError("Please select a PDF file."); return; }
-
-  const file = fileInput.files[0];
-  if (!file.name.toLowerCase().endsWith(".pdf")) { showUploadError("File must be a .pdf"); return; }
+  if (!ticker)             { showUploadError("Ticker is required."); return; }
+  if (!_uploadFiles.length){ showUploadError("Add at least one PDF file."); return; }
 
   submitBtn.disabled = true;
-  submitBtn.textContent = "Extracting text (large PDF — please wait)…";
+  progressFill.style.width = "0%";
+  progressEl.classList.remove("hidden");
 
-  let pdfText;
-  try {
-    pdfText = await extractPdfText(file);
-  } catch (err) {
-    showUploadError("Could not read PDF — is it a scanned/image PDF?");
-    submitBtn.disabled = false;
-    submitBtn.textContent = "Upload & Analyse";
-    return;
-  }
+  const total = _uploadFiles.length;
+  let successCount = 0;
 
-  if (!pdfText || pdfText.trim().length < 200) {
-    showUploadError("Extracted text too short — is this a scanned/image PDF?");
-    submitBtn.disabled = false;
-    submitBtn.textContent = "Upload & Analyse";
-    return;
-  }
+  for (let i = 0; i < total; i++) {
+    const item = _uploadFiles[i];
 
-  submitBtn.textContent = "Uploading…";
+    // ── Extract text ──────────────────────────────────
+    progressText.textContent =
+      `Extracting text from file ${i + 1} of ${total}: ${item.file.name}…`;
+    progressFill.style.width = `${Math.round(((i + 0.3) / total) * 100)}%`;
 
-  try {
-    const res  = await fetch("/api/upload", {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ ticker, report_type: reportType, period, pdf_text: pdfText }),
-    });
-    const data = await res.json();
-
-    if (!res.ok || data.error) {
-      showUploadError(data.error || `Upload failed (${res.status})`);
+    let pdfText;
+    try {
+      pdfText = await extractPdfText(item.file);
+    } catch (err) {
+      showUploadError(`${item.file.name}: could not read PDF — is it scanned/image-only?`);
       submitBtn.disabled = false;
-      submitBtn.textContent = "Upload & Analyse";
+      progressEl.classList.add("hidden");
+      return;
+    }
+    if (!pdfText || pdfText.trim().length < 200) {
+      showUploadError(`${item.file.name}: extracted text too short.`);
+      submitBtn.disabled = false;
+      progressEl.classList.add("hidden");
       return;
     }
 
-    // Show success message and let the user trigger analysis manually
-    successEl.textContent = "✦ PDF uploaded successfully. Click Analyse to run fresh analysis.";
-    successEl.classList.remove("hidden");
-    document.getElementById("upload-form").classList.add("hidden");
+    // ── Upload ────────────────────────────────────────
+    const period = item.reportType === "quarterly"
+      ? `${item.quarter} ${item.year}`
+      : String(item.year);
 
-    // Pre-fill the search box so the user can click Analyse immediately
-    document.getElementById("ticker-input").value = ticker;
+    progressText.textContent =
+      `Uploading file ${i + 1} of ${total}: ${item.file.name} (${period})…`;
+    progressFill.style.width = `${Math.round(((i + 0.7) / total) * 100)}%`;
 
-    // Close modal after a pause; reset form for next use
-    setTimeout(() => {
-      closeUpload();
-      setTimeout(() => {
-        document.getElementById("upload-form").classList.remove("hidden");
-        successEl.classList.add("hidden");
-        document.getElementById("upload-form").reset();
+    try {
+      const res  = await fetch("/api/upload", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticker,
+          report_type: item.reportType,
+          period,
+          pdf_text: pdfText,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        showUploadError(`${item.file.name}: ${data.error || `Upload failed (${res.status})`}`);
         submitBtn.disabled = false;
-        submitBtn.textContent = "Upload & Analyse";
-      }, 400);
-    }, 3000);
+        progressEl.classList.add("hidden");
+        return;
+      }
+      successCount++;
+    } catch (err) {
+      showUploadError(`${item.file.name}: network error — ${err.message}`);
+      submitBtn.disabled = false;
+      progressEl.classList.add("hidden");
+      return;
+    }
 
-  } catch (err) {
-    showUploadError("Network error — please try again.");
-    submitBtn.disabled = false;
-    submitBtn.textContent = "Upload & Analyse";
+    progressFill.style.width = `${Math.round(((i + 1) / total) * 100)}%`;
+
+    // 5-second delay between files (not after the last one)
+    if (i < total - 1) {
+      const remaining = total - i - 1;
+      progressText.textContent =
+        `Waiting 5 s before next upload… (${remaining} file${remaining > 1 ? "s" : ""} remaining)`;
+      await new Promise(r => setTimeout(r, 5000));
+    }
   }
-});
+
+  // ── All done ──────────────────────────────────────
+  progressEl.classList.add("hidden");
+  successEl.textContent =
+    `✦ ${successCount} file${successCount > 1 ? "s" : ""} uploaded successfully. Click Analyse to run fresh analysis.`;
+  successEl.classList.remove("hidden");
+  document.getElementById("ticker-input").value = ticker;
+
+  setTimeout(() => {
+    closeUpload();
+    setTimeout(() => {
+      _uploadFiles = [];
+      _renderUploadFileList();
+      successEl.classList.add("hidden");
+      errorEl.classList.add("hidden");
+      progressFill.style.width = "0%";
+      submitBtn.disabled = false;
+    }, 400);
+  }, 3000);
+}
 
 function showUploadError(msg) {
   const el = document.getElementById("up-error");
