@@ -24,6 +24,23 @@
         <p class="brand-sub">Swedish Stock Analysis</p>
       </div>
     </div>
+  </div>
+</header>
+
+<!-- ═══════════════════════ TOP NAV ═══════════════════════ -->
+<nav id="top-nav" class="top-nav">
+  <div class="top-nav-inner">
+    <button class="top-nav-btn active" onclick="switchView('view-upload')">Upload &amp; Analyse</button>
+    <button class="top-nav-btn" onclick="switchView('view-reports')">My Reports</button>
+  </div>
+</nav>
+
+<!-- ═══════════════════════ VIEW: UPLOAD & ANALYSE ═══════════════════════ -->
+<div id="view-upload" class="view-panel">
+
+<!-- ─── Search bar ─── -->
+<div class="search-section">
+  <div class="search-inner">
     <div class="search-wrap">
       <div class="search-box">
         <input id="ticker-input" type="text"
@@ -44,18 +61,7 @@
       </div>
     </div>
   </div>
-</header>
-
-<!-- ═══════════════════════ TOP NAV ═══════════════════════ -->
-<nav id="top-nav" class="top-nav">
-  <div class="top-nav-inner">
-    <button class="top-nav-btn active" onclick="switchView('view-upload')">Upload &amp; Analyse</button>
-    <button class="top-nav-btn" onclick="switchView('view-reports')">My Reports</button>
-  </div>
-</nav>
-
-<!-- ═══════════════════════ VIEW: UPLOAD & ANALYSE ═══════════════════════ -->
-<div id="view-upload" class="view-panel">
+</div>
 
 <!-- ═══════════════════════ STATUS BAR ═══════════════════════ -->
 <div id="status-bar" class="status-bar hidden">

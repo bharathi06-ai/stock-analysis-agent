@@ -180,6 +180,18 @@ button#analyse-btn:disabled { border-color: #555; color: #666; cursor: not-allow
 .chip:hover { border-color: var(--accent); color: var(--accent); }
 .demo-chip  { border-color: var(--accent); color: var(--accent); }
 
+/* ── SEARCH SECTION (inside view-upload) ─── */
+.search-section {
+  background: var(--header-bg);
+  border-bottom: 2px solid var(--accent);
+  padding: 16px 24px;
+}
+
+.search-inner {
+  max-width: 1340px;
+  margin: 0 auto;
+}
+
 /* ── TOP NAV ─────────────────────────────── */
 .top-nav {
   background: var(--bg2);
