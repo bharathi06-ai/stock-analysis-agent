@@ -46,6 +46,17 @@
   </div>
 </header>
 
+<!-- ═══════════════════════ TOP NAV ═══════════════════════ -->
+<nav id="top-nav" class="top-nav">
+  <div class="top-nav-inner">
+    <button class="top-nav-btn active" onclick="switchView('view-upload')">Upload &amp; Analyse</button>
+    <button class="top-nav-btn" onclick="switchView('view-reports')">My Reports</button>
+  </div>
+</nav>
+
+<!-- ═══════════════════════ VIEW: UPLOAD & ANALYSE ═══════════════════════ -->
+<div id="view-upload" class="view-panel">
+
 <!-- ═══════════════════════ STATUS BAR ═══════════════════════ -->
 <div id="status-bar" class="status-bar hidden">
   <div class="status-inner">
@@ -173,6 +184,13 @@
 
   <div id="last-updated" class="last-updated"></div>
 </main>
+
+</div><!-- /view-upload -->
+
+<!-- ═══════════════════════ VIEW: MY REPORTS ═══════════════════════ -->
+<div id="view-reports" class="view-panel hidden">
+  <div class="reports-placeholder">My Reports — coming soon</div>
+</div>
 
 <!-- ═══════════════════════ WELCOME MODAL ═══════════════════════ -->
 <div id="welcome-overlay" class="welcome-overlay hidden" onclick="closeWelcomeOnOverlay(event)">

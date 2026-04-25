@@ -60,6 +60,15 @@ function setTicker(ticker) {
   document.getElementById("ticker-input").value = ticker;
 }
 
+// ── Top-nav view switching ────────────────────────────
+function switchView(viewId) {
+  document.querySelectorAll(".view-panel").forEach(p => p.classList.add("hidden"));
+  document.getElementById(viewId).classList.remove("hidden");
+  document.querySelectorAll(".top-nav-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.getAttribute("onclick") === `switchView('${viewId}')`);
+  });
+}
+
 // ── Status bar ────────────────────────────────────────
 function showStatus(msg, isError = false) {
   const bar = document.getElementById("status-bar");

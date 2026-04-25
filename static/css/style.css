@@ -180,6 +180,57 @@ button#analyse-btn:disabled { border-color: #555; color: #666; cursor: not-allow
 .chip:hover { border-color: var(--accent); color: var(--accent); }
 .demo-chip  { border-color: var(--accent); color: var(--accent); }
 
+/* ── TOP NAV ─────────────────────────────── */
+.top-nav {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--divider);
+  padding: 0 24px;
+}
+
+.top-nav-inner {
+  max-width: 1340px;
+  margin: 0 auto;
+  display: flex;
+  gap: 4px;
+}
+
+.top-nav-btn {
+  padding: 12px 18px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text2);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 400;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-bottom-color 0.15s;
+  margin-bottom: -1px;
+}
+
+.top-nav-btn:hover { color: var(--text); }
+
+.top-nav-btn.active {
+  color: var(--text);
+  font-weight: 500;
+  border-bottom-color: var(--accent2);
+}
+
+/* ── VIEW PANELS ─────────────────────────── */
+.view-panel { display: block; }
+.view-panel.hidden { display: none !important; }
+
+/* ── REPORTS PLACEHOLDER ─────────────────── */
+.reports-placeholder {
+  max-width: 1340px;
+  margin: 60px auto;
+  padding: 0 24px;
+  color: var(--text3);
+  font-size: 0.95rem;
+  font-weight: 300;
+}
+
 /* ── STATUS BAR ─────────────────────────── */
 .status-bar {
   background: #F5F0E6;
