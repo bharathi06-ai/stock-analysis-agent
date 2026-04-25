@@ -31,30 +31,44 @@ def _handle_list_reports_inner():
         return jsonify({"error": "Database not configured — missing Supabase env vars"}), 500
 
     try:
-        resp = (
+        cache_resp = (
             client.table("stock_ai_cache")
-            .select("ticker, period, report_type, filename, generated_at")
+            .select("ticker, period, report_type, generated_at")
             .order("ticker", desc=False)
             .order("period", desc=False)
+            .execute()
+        )
+        pdf_resp = (
+            client.table("stock_pdf_store")
+            .select("ticker, period, report_type, filename")
             .execute()
         )
     except Exception as exc:
         print(f"[list_reports] Supabase query error:\n{traceback.format_exc()}")
         return jsonify({"error": f"Database query failed: {exc}"}), 500
 
-    rows = resp.data or []
+    # Build filename lookup keyed by (ticker, period, report_type)
+    filename_lookup: dict = {}
+    for row in (pdf_resp.data or []):
+        key = (row["ticker"], row.get("period", ""), row.get("report_type", ""))
+        filename_lookup[key] = row.get("filename")
+
+    rows = cache_resp.data or []
 
     # Group by ticker, preserving alphabetical order
     ticker_map: dict = {}
     for row in rows:
         t = row["ticker"]
+        period      = row.get("period")      or ""
+        report_type = row.get("report_type") or ""
+        key         = (t, period, report_type)
         if t not in ticker_map:
             ticker_map[t] = []
         ticker_map[t].append({
-            "period":      row.get("period")      or "",
-            "report_type": row.get("report_type") or "",
-            "filename":    row.get("filename")    or "",
-            "created_at":  row.get("generated_at") or row.get("created_at") or "",
+            "period":      period,
+            "report_type": report_type,
+            "filename":    filename_lookup.get(key),
+            "created_at":  row.get("generated_at") or "",
         })
 
     tickers = [
