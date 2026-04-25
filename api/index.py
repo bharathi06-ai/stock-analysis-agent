@@ -391,6 +391,12 @@ def refresh():
     )
 
 
+@app.route("/api/list_reports", methods=["GET"])
+def list_reports():
+    from api.list_reports import handle_list_reports
+    return handle_list_reports()
+
+
 @app.route("/api/upload", methods=["POST"])
 def upload_pdf():
     """Accept a PDF upload, extract text, store in Supabase, clear analysis cache."""

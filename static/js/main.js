@@ -67,7 +67,107 @@ function switchView(viewId) {
   document.querySelectorAll(".top-nav-btn").forEach(btn => {
     btn.classList.toggle("active", btn.getAttribute("onclick") === `switchView('${viewId}')`);
   });
+  if (viewId === "view-reports") loadMyReports();
 }
+
+// ── My Reports ────────────────────────────────────────
+let _reportsCache = null;
+
+async function _fetchReports() {
+  if (_reportsCache) return _reportsCache;
+  const resp = await fetch("/api/list_reports");
+  if (!resp.ok) throw new Error("Failed to load reports (" + resp.status + ")");
+  _reportsCache = await resp.json();
+  return _reportsCache;
+}
+
+function _formatPeriod(period) {
+  // "2023_annual" → "2023 Annual", "2023_Q1" → "2023 Q1", "Q1 2025" → "Q1 2025"
+  return period.replace(/_/g, " ").replace(/\b(\w)/g, c => c.toUpperCase());
+}
+
+function _renderTickerCard(tickerObj) {
+  const { ticker, reports } = tickerObj;
+  const rows = reports.map(r => {
+    const period   = _formatPeriod(r.period || "—");
+    const type     = r.report_type
+      ? r.report_type.charAt(0).toUpperCase() + r.report_type.slice(1)
+      : "—";
+    const uploaded = (r.created_at || "").slice(0, 10) || "—";
+    const fname    = r.filename || "—";
+    return `
+      <tr>
+        <td>${period}</td>
+        <td>${type}</td>
+        <td>${fname}</td>
+        <td>${uploaded}</td>
+        <td class="report-actions">
+          <button class="btn-view-report report-action-btn report-btn-view"
+            data-ticker="${ticker}" data-period="${r.period}" data-report-type="${r.report_type}">View</button>
+          <button class="btn-delete-report report-action-btn report-btn-delete"
+            data-ticker="${ticker}" data-period="${r.period}" data-report-type="${r.report_type}">Delete</button>
+        </td>
+      </tr>`;
+  }).join("");
+
+  return `
+    <div class="ticker-card">
+      <div class="ticker-card-header">
+        <span class="ticker-card-name">${ticker}</span>
+        <span class="ticker-card-chevron">▶</span>
+      </div>
+      <div class="ticker-card-body hidden">
+        <table class="reports-table">
+          <thead>
+            <tr>
+              <th>Period</th><th>Type</th><th>Filename</th><th>Uploaded</th><th></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+async function loadMyReports() {
+  const view = document.getElementById("view-reports");
+  try {
+    const data = await _fetchReports();
+    if (!data.tickers || data.tickers.length === 0) {
+      view.innerHTML = '<div class="reports-view-wrap"><p class="reports-placeholder">No reports yet. Go to Upload &amp; Analyse to add your first report.</p></div>';
+      return;
+    }
+    view.innerHTML = '<div class="reports-view-wrap">' + data.tickers.map(_renderTickerCard).join("") + '</div>';
+  } catch (err) {
+    view.innerHTML = '<div class="reports-view-wrap"><p class="reports-placeholder">Could not load reports — ' + err.message + '</p></div>';
+  }
+}
+
+// Event delegation for My Reports (one listener, covers all cards)
+document.getElementById("view-reports").addEventListener("click", e => {
+  const header = e.target.closest(".ticker-card-header");
+  if (header) {
+    const body    = header.closest(".ticker-card").querySelector(".ticker-card-body");
+    const chevron = header.querySelector(".ticker-card-chevron");
+    body.classList.toggle("hidden");
+    chevron.textContent = body.classList.contains("hidden") ? "▶" : "▼";
+    return;
+  }
+
+  const viewBtn = e.target.closest(".btn-view-report");
+  if (viewBtn) {
+    const { ticker, period, reportType } = viewBtn.dataset;
+    console.log("View clicked:", ticker, period, reportType);
+    return;
+  }
+
+  const deleteBtn = e.target.closest(".btn-delete-report");
+  if (deleteBtn) {
+    const { ticker, period, reportType } = deleteBtn.dataset;
+    console.log("Delete clicked:", ticker, period, reportType);
+    return;
+  }
+});
 
 // ── Status bar ────────────────────────────────────────
 function showStatus(msg, isError = false) {
@@ -855,10 +955,24 @@ function closeWelcomeOnOverlay(e) {
   if (e.target === document.getElementById("welcome-overlay")) closeWelcome();
 }
 
-// Show once per browser session
+// Show welcome modal once per session
 (function () {
   if (!sessionStorage.getItem("welcomeSeen")) {
     document.getElementById("welcome-overlay").classList.remove("hidden");
+  }
+})();
+
+// Set default view: My Reports if any reports exist, else Upload & Analyse
+(async function initDefaultView() {
+  try {
+    const data = await _fetchReports();
+    if (data && data.tickers && data.tickers.length > 0) {
+      switchView("view-reports");
+    } else {
+      switchView("view-upload");
+    }
+  } catch (_) {
+    switchView("view-upload");
   }
 })();
 

@@ -1585,3 +1585,117 @@ button#analyse-btn:disabled { border-color: #555; color: #666; cursor: not-allow
   color: var(--header-bg);
   transform: translateY(-1px);
 }
+
+/* ══════════════════════════════════════════
+   MY REPORTS VIEW
+══════════════════════════════════════════ */
+
+.reports-view-wrap {
+  max-width: 1340px;
+  margin: 0 auto;
+  padding: 28px 24px 60px;
+}
+
+/* ── Ticker card ────────────────────────── */
+.ticker-card {
+  background: var(--bg2);
+  border: 1px solid #E0D9CC;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.ticker-card-header {
+  padding: 14px 18px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg2);
+  user-select: none;
+}
+
+.ticker-card-header:hover { background: var(--bg3); }
+
+.ticker-card-name {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.ticker-card-chevron {
+  font-size: 0.7rem;
+  color: var(--text3);
+}
+
+.ticker-card-body {
+  padding: 0 18px 14px;
+}
+
+/* ── Reports table ──────────────────────── */
+.reports-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.reports-table thead tr {
+  background: var(--bg3);
+}
+
+.reports-table th {
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text3);
+  border-bottom: 1px solid var(--border);
+}
+
+.reports-table td {
+  padding: 9px 12px;
+  color: var(--text2);
+  border-bottom: 1px solid #F0EBE0;
+  vertical-align: middle;
+}
+
+.reports-table tr:last-child td { border-bottom: none; }
+
+.report-actions { white-space: nowrap; }
+
+/* ── Action buttons ─────────────────────── */
+.report-action-btn {
+  padding: 4px 11px;
+  border-radius: 5px;
+  border: 1px solid;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  margin-right: 5px;
+}
+
+.report-btn-view {
+  background: transparent;
+  border-color: #A5C9A8;
+  color: var(--green);
+}
+
+.report-btn-view:hover {
+  background: #E8F5E9;
+  border-color: var(--green);
+}
+
+.report-btn-delete {
+  background: transparent;
+  border-color: #EF9A9A;
+  color: var(--red);
+}
+
+.report-btn-delete:hover {
+  background: #FFEBEE;
+  border-color: var(--red);
+}
