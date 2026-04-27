@@ -428,8 +428,10 @@ function renderDashboard(d) {
   renderQoQ(d);
   renderAnalysis(d);
   renderSourceChips(d);
-  document.getElementById("last-updated").textContent =
-    "Last updated: " + (d.last_updated || "—");
+  const updatedStr = "Last updated: " + (d.last_updated || "—");
+  document.getElementById("last-updated").textContent = updatedStr;
+  const utilDate = document.getElementById("util-date-display");
+  if (utilDate) utilDate.textContent = updatedStr;
 }
 
 // ── SOURCE CHIPS ──────────────────────────────────────
