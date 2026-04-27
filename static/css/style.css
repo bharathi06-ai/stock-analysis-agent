@@ -498,13 +498,13 @@ button#analyse-btn:disabled { background: var(--text3); cursor: not-allowed; }
 .tab-bar::-webkit-scrollbar { display: none; }
 
 .tab-btn {
-  padding: 12px 16px;
+  padding: 12px 14px;
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
   color: var(--text3);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
   cursor: pointer;
   white-space: nowrap;
