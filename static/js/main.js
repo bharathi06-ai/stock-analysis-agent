@@ -1,16 +1,12 @@
 /* ═══════════════════════════════════════════════════════
-   StockGPT for Siva — Dashboard JS (Phase 4)
-   9-tab Screener UI with Chart.js
+   StockDesk by Siva — Dashboard JS (Phase D)
+   Company-name UX: three views, no ticker search.
 ═══════════════════════════════════════════════════════ */
 
 "use strict";
 
 // ── Currency unit (set from dashboard payload on each render) ─────────────
-// Reflects the reporting currency detected from the uploaded PDF.
-// e.g. "SEKm", "EURm", "DKKm", "NOKm"
 let _currencyUnit = "SEKm";
-
-// Derive the 3-letter currency code from the unit string (strip trailing "m")
 function _baseCcy() { return _currencyUnit.replace(/m$/i, ""); }
 
 // ── Helpers ──────────────────────────────────────────
@@ -24,29 +20,10 @@ function fmt(v, decimals = 2, suffix = "") {
 
 function fmtM(v)   { return v == null ? "—" : fmt(v, 0) + " " + _currencyUnit; }
 function fmtPct(v) { return v == null ? "—" : fmt(v, 2) + "%"; }
-function fmtPE(v)  { return v == null ? "—" : fmt(v, 1) + "x"; }
-
-// Market cap: show as BSEK (1 dp) for values ≥ 1 000 MSEK, else MSEK
-function fmtCap(m) {
-  if (m == null) return "—";
-  if (m >= 1_000) return fmt(m / 1_000, 1) + " BSEK";
-  return fmt(m, 0) + " MSEK";
-}
 
 function colClass(v) {
   if (v == null) return "";
   return v >= 0 ? "pos" : "neg";
-}
-
-function ratColor(label, v) {
-  if (v == null) return "";
-  // heuristics: green = good, red = risky
-  const L = label.toLowerCase();
-  if (L.includes("yield") || L.includes("roe") || L.includes("roa") ||
-      L.includes("margin") || L.includes("cash flow")) return v > 0 ? "green" : "red";
-  if (L.includes("debt") || L.includes("payout")) return v > 100 ? "red" : "";
-  if (L.includes("p/e") || L.includes("p/b")) return v < 0 ? "red" : "accent";
-  return "";
 }
 
 function el(tag, cls, html) {
@@ -56,8 +33,13 @@ function el(tag, cls, html) {
   return e;
 }
 
-function setTicker(ticker) {
-  document.getElementById("ticker-input").value = ticker;
+// HTML-safe string for use inside attributes and text nodes
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 // ── Top-nav view switching ────────────────────────────
@@ -65,109 +47,10 @@ function switchView(viewId) {
   document.querySelectorAll(".view-panel").forEach(p => p.classList.add("hidden"));
   document.getElementById(viewId).classList.remove("hidden");
   document.querySelectorAll(".top-nav-btn").forEach(btn => {
-    btn.classList.toggle("active", btn.getAttribute("onclick") === `switchView('${viewId}')`);
+    btn.classList.toggle("active", btn.dataset.view === viewId);
   });
-  if (viewId === "view-reports") loadMyReports();
+  if (viewId === "view-upload") renderUploadView();
 }
-
-// ── My Reports ────────────────────────────────────────
-let _reportsCache = null;
-
-async function _fetchReports() {
-  if (_reportsCache) return _reportsCache;
-  const resp = await fetch("/api/list_reports");
-  if (!resp.ok) throw new Error("Failed to load reports (" + resp.status + ")");
-  _reportsCache = await resp.json();
-  return _reportsCache;
-}
-
-function _formatPeriod(period) {
-  // "2023_annual" → "2023 Annual", "2023_Q1" → "2023 Q1", "Q1 2025" → "Q1 2025"
-  return period.replace(/_/g, " ").replace(/\b(\w)/g, c => c.toUpperCase());
-}
-
-function _renderTickerCard(tickerObj) {
-  const { ticker, reports } = tickerObj;
-  const rows = reports.map(r => {
-    const period   = _formatPeriod(r.period || "—");
-    const type     = r.report_type
-      ? r.report_type.charAt(0).toUpperCase() + r.report_type.slice(1)
-      : "—";
-    const uploaded = (r.created_at || "").slice(0, 10) || "—";
-    const fname    = r.filename || "—";
-    return `
-      <tr>
-        <td>${period}</td>
-        <td>${type}</td>
-        <td>${fname}</td>
-        <td>${uploaded}</td>
-        <td class="report-actions">
-          <button class="btn-view-report report-action-btn report-btn-view"
-            data-ticker="${ticker}" data-period="${r.period}" data-report-type="${r.report_type}">View</button>
-          <button class="btn-delete-report report-action-btn report-btn-delete"
-            data-ticker="${ticker}" data-period="${r.period}" data-report-type="${r.report_type}">Delete</button>
-        </td>
-      </tr>`;
-  }).join("");
-
-  return `
-    <div class="ticker-card">
-      <div class="ticker-card-header">
-        <span class="ticker-card-name">${ticker}</span>
-        <span class="ticker-card-chevron">▶</span>
-      </div>
-      <div class="ticker-card-body hidden">
-        <table class="reports-table">
-          <thead>
-            <tr>
-              <th>Period</th><th>Type</th><th>Filename</th><th>Uploaded</th><th></th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    </div>`;
-}
-
-async function loadMyReports() {
-  const view = document.getElementById("view-reports");
-  try {
-    const data = await _fetchReports();
-    if (!data.tickers || data.tickers.length === 0) {
-      view.innerHTML = '<div class="reports-view-wrap"><p class="reports-placeholder">No reports yet. Go to Upload &amp; Analyse to add your first report.</p></div>';
-      return;
-    }
-    view.innerHTML = '<div class="reports-view-wrap">' + data.tickers.map(_renderTickerCard).join("") + '</div>';
-  } catch (err) {
-    view.innerHTML = '<div class="reports-view-wrap"><p class="reports-placeholder">Could not load reports — ' + err.message + '</p></div>';
-  }
-}
-
-// Event delegation for My Reports (one listener, covers all cards)
-document.getElementById("view-reports").addEventListener("click", e => {
-  const header = e.target.closest(".ticker-card-header");
-  if (header) {
-    const body    = header.closest(".ticker-card").querySelector(".ticker-card-body");
-    const chevron = header.querySelector(".ticker-card-chevron");
-    body.classList.toggle("hidden");
-    chevron.textContent = body.classList.contains("hidden") ? "▶" : "▼";
-    return;
-  }
-
-  const viewBtn = e.target.closest(".btn-view-report");
-  if (viewBtn) {
-    const { ticker, period, reportType } = viewBtn.dataset;
-    console.log("View clicked:", ticker, period, reportType);
-    return;
-  }
-
-  const deleteBtn = e.target.closest(".btn-delete-report");
-  if (deleteBtn) {
-    const { ticker, period, reportType } = deleteBtn.dataset;
-    console.log("Delete clicked:", ticker, period, reportType);
-    return;
-  }
-});
 
 // ── Status bar ────────────────────────────────────────
 function showStatus(msg, isError = false) {
@@ -180,7 +63,6 @@ function showStatus(msg, isError = false) {
   if (isError) bar.classList.add("error-bar");
 }
 
-// Step-aware progress — shows "Step N of M" + animated fill bar
 function showProgress(msg, step, total) {
   document.getElementById("status-text").textContent = msg;
   document.getElementById("status-icon").textContent = "⏳";
@@ -206,60 +88,88 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
   });
 });
 
-// ── Demo loader ──────────────────────────────────────
-async function loadDemo() {
-  const btn = document.getElementById("analyse-btn");
-  btn.disabled = true;
-  showStatus("Loading Nordea demo data…");
-  document.getElementById("dashboard").classList.add("hidden");
+// ════════════════════════════════════════════════════════
+//  COMPANIES CACHE & INIT
+// ════════════════════════════════════════════════════════
+
+let _companiesCache = null;  // { companies: [...] }
+let _currentCompany = null;  // currently loaded company name
+
+async function _fetchCompanies(force = false) {
+  if (!force && _companiesCache) return _companiesCache;
+  const resp = await fetch("/api/list_reports");
+  if (!resp.ok) throw new Error("Failed to load companies (" + resp.status + ")");
+  _companiesCache = await resp.json();
+  return _companiesCache;
+}
+
+function _analysedCompanies(data) {
+  return (data.companies || []).filter(c => c.analysed);
+}
+
+// Called once on page load (after password gate)
+async function initApp() {
   try {
-    const resp = await fetch("/api/demo");
-    const data = await resp.json();
-    hideStatus();
-    renderDashboard(data);
-    document.getElementById("dashboard").classList.remove("hidden");
-    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-    document.querySelector('.tab-btn[data-tab="summary"]').classList.add("active");
-    document.getElementById("tab-summary").classList.add("active");
-  } catch (err) {
-    showStatus("Demo load failed: " + err.message, true);
-  } finally {
-    btn.disabled = false;
+    const data = await _fetchCompanies();
+    const analysed = _analysedCompanies(data);
+    populateDeskDropdown(data.companies || []);
+    populateUploadDropdown(data.companies || []);
+
+    if (analysed.length > 0) {
+      switchView("view-desk");
+      await loadCompany(analysed[0].company_name);
+    } else {
+      switchView("view-upload");
+      renderCompanyCards(data.companies || []);
+    }
+  } catch (_) {
+    switchView("view-upload");
   }
 }
 
-// ── Analyse button ────────────────────────────────────
-document.getElementById("analyse-btn").addEventListener("click", runAnalysis);
-document.getElementById("ticker-input").addEventListener("keydown", e => {
-  if (e.key === "Enter") runAnalysis();
-});
+// ════════════════════════════════════════════════════════
+//  MY STOCK DESK
+// ════════════════════════════════════════════════════════
 
-async function runAnalysis(nocache = false) {
-  const ticker = document.getElementById("ticker-input").value.trim().toUpperCase();
-  if (!ticker) return;
+function populateDeskDropdown(companies) {
+  const sel = document.getElementById("desk-company-select");
+  const analysed = (companies || []).filter(c => c.analysed);
+  sel.innerHTML = analysed.length
+    ? analysed.map(c => `<option value="${esc(c.company_name)}">${esc(c.company_name)}</option>`).join("")
+    : '<option value="">No analysed companies</option>';
+}
 
-  const btn = document.getElementById("analyse-btn");
-  btn.disabled = true;
-  showStatus(`Starting analysis for ${ticker}…`);
+async function onDeskCompanyChange(companyName) {
+  if (companyName && companyName !== _currentCompany) {
+    await loadCompany(companyName);
+  }
+}
+
+async function loadCompany(companyName) {
+  _currentCompany = companyName;
+  document.getElementById("desk-empty").classList.add("hidden");
+  document.getElementById("desk-content").classList.remove("hidden");
   document.getElementById("dashboard").classList.add("hidden");
 
+  // Sync dropdown
+  const sel = document.getElementById("desk-company-select");
+  if (sel) sel.value = companyName;
+
+  showStatus("Loading " + companyName + "…");
+
   try {
-    const url  = nocache ? "/api/analyse?nocache=1" : "/api/analyse";
-    const resp = await fetch(url, {
+    const resp = await fetch("/api/analyse", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ ticker }),
+      body:    JSON.stringify({ company_name: companyName }),
     });
 
-    // Validation errors come back as plain JSON before streaming starts
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
-      showStatus(err.error || "Analysis failed", true);
+      showStatus(err.error || "Failed to load data", true);
       return;
     }
 
-    // Read the SSE stream chunk by chunk
     const reader  = resp.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
@@ -267,12 +177,9 @@ async function runAnalysis(nocache = false) {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-
       buf += decoder.decode(value, { stream: true });
-
-      // SSE events are separated by double newlines
       const parts = buf.split("\n\n");
-      buf = parts.pop();   // keep any incomplete trailing chunk
+      buf = parts.pop();
 
       for (const part of parts) {
         const line = part.trim();
@@ -288,6 +195,7 @@ async function runAnalysis(nocache = false) {
           hideStatus();
           renderDashboard(evt.result);
           document.getElementById("dashboard").classList.remove("hidden");
+          // Reset to summary tab
           document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
           document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
           document.querySelector('.tab-btn[data-tab="summary"]').classList.add("active");
@@ -298,11 +206,8 @@ async function runAnalysis(nocache = false) {
         }
       }
     }
-
   } catch (err) {
     showStatus("Network error: " + err.message, true);
-  } finally {
-    btn.disabled = false;
   }
 }
 
@@ -310,7 +215,6 @@ async function runAnalysis(nocache = false) {
 //  FINANCIAL TABLE HELPERS
 // ════════════════════════════════════════════════════════
 
-// PDF values are already in native currency — no conversion needed.
 function toE(v) { return v; }
 function fmtE(v) { return v == null ? "—" : fmt(v, 0); }
 
@@ -347,12 +251,6 @@ function deltaAbsCell(curr, prev, lb = false) {
   return `<td class="${good ? 'delta-pos' : 'delta-neg'}">${d >= 0 ? "+" : ""}${fmt(d, 0)}</td>`;
 }
 
-/**
- * Build a Nordic-bank-style financial statement table.
- * rows: [{type:'section'|'sub'|'total'|'major', label, vals:[], lowerIsBetter}]
- * years: [2020, 2021, ...]
- * opts: { showDelta, showYoY, showCagr }
- */
 function buildFinTable(rows, years, { showDelta = false, showYoY = true, showCagr = false } = {}) {
   if (!years.length) return '<p class="empty-state">No data available.</p>';
   const extra = +showDelta + +showYoY + +showCagr;
@@ -414,10 +312,9 @@ function ratioSection(title, rows) {
 //  RENDER DASHBOARD
 // ════════════════════════════════════════════════════════
 function renderDashboard(d) {
-  // Set module-level currency unit so all table renderers use the correct label
   _currencyUnit = d.currency_unit || "SEKm";
 
-  renderHero(d);
+  renderDeskHero(d);
   renderMetricPills(d);
   renderSummary(d);
   renderIncomeStatement(d);
@@ -426,96 +323,110 @@ function renderDashboard(d) {
   renderRatiosAndKeyFigures(d);
   renderYoY(d);
   renderQoQ(d);
-  renderAnalysis(d);
   renderSourceChips(d);
+
   const updatedStr = "Last updated: " + (d.last_updated || "—");
   document.getElementById("last-updated").textContent = updatedStr;
   const utilDate = document.getElementById("util-date-display");
   if (utilDate) utilDate.textContent = updatedStr;
 }
 
+// ── DESK HERO ─────────────────────────────────────────
+function renderDeskHero(d) {
+  const co = d.company || {};
+  const displayName = co.name || _currentCompany || "—";
+  document.getElementById("company-name").textContent = displayName;
+
+  // Subtitle: N reports · YYYY–YYYY from profit_loss years
+  const pl = (d.profit_loss || []).map(r => r.year).filter(Boolean).sort((a, b) => a - b);
+  let meta = "";
+  if (pl.length) {
+    meta = pl.length + " report" + (pl.length !== 1 ? "s" : "");
+    if (pl.length > 1) meta += " · " + pl[0] + "–" + pl[pl.length - 1];
+    else meta += " · " + pl[0];
+  }
+  document.getElementById("company-meta").textContent = meta || "—";
+
+  // Keep dropdown in sync
+  const sel = document.getElementById("desk-company-select");
+  if (sel && _currentCompany) sel.value = _currentCompany;
+}
+
+// ── METRIC PILLS (4 cards: Total Income, Net Income, ROE, CET1) ──────────
+function renderMetricPills(d) {
+  const pl  = (d.profit_loss  || []).sort((a, b) => b.year - a.year);
+  const kf  = (d.key_figures  || []).sort((a, b) => b.year - a.year);
+  const rat = d.ratios || {};
+  const pl0 = pl[0] || {};
+  const pl1 = pl[1] || {};
+  const kf0 = kf[0] || {};
+  const kf1 = kf[1] || {};
+
+  const roe0  = kf0.roe_pct  ?? rat.roe  ?? null;
+  const roe1  = kf1.roe_pct  ?? null;
+  const cet0  = kf0.cet1_ratio_pct ?? null;
+  const cet1  = kf1.cet1_ratio_pct ?? null;
+
+  const metrics = [
+    {
+      label: "Total Income",
+      value: fmtE(pl0.revenue),
+      unit: _currencyUnit,
+      delta: yoyPct(pl0.revenue, pl1.revenue),
+    },
+    {
+      label: "Net Income",
+      value: fmtE(pl0.net_income),
+      unit: _currencyUnit,
+      delta: yoyPct(pl0.net_income, pl1.net_income),
+    },
+    {
+      label: "Return on Equity",
+      value: roe0 != null ? fmt(roe0, 1) + "%" : "—",
+      delta: yoyPct(roe0, roe1),
+    },
+    {
+      label: "CET1 Capital",
+      value: cet0 != null ? fmt(cet0, 1) + "%" : "—",
+      delta: yoyPct(cet0, cet1),
+    },
+  ];
+
+  const wrap = document.getElementById("metric-pills");
+  wrap.innerHTML = metrics.map(m => {
+    const yoyHtml = m.delta != null
+      ? `<div class="mpill-yoy ${m.delta >= 0 ? 'pos' : 'neg'}">${m.delta >= 0 ? "+" : ""}${fmt(m.delta, 1)}% YoY</div>`
+      : "";
+    const unitHtml = m.unit
+      ? ` <span style="font-size:11px;font-weight:300;color:var(--text3)">${m.unit}</span>`
+      : "";
+    return `
+      <div class="mpill">
+        <div class="pill-label">${m.label}</div>
+        <div class="pill-value">${m.value}${unitHtml}</div>
+        ${yoyHtml}
+      </div>`;
+  }).join("");
+}
+
 // ── SOURCE CHIPS ──────────────────────────────────────
 function renderSourceChips(d) {
-  const src    = d.data_sources || {};
-  const ticker = (d.ticker || "").toUpperCase();
-
-  // Use the PDF filename stored in sessionStorage during upload if available,
-  // then fall back to whatever the backend put in data_sources.financials.
-  const storedFile = sessionStorage.getItem("pdf_filename_" + ticker);
-  const finLabel   = storedFile || src.financials || "Company Annual Reports (PDF)";
-  const qLabel     = storedFile || src.quarters   || "Company Quarterly Reports (PDF)";
+  const src         = d.data_sources || {};
+  const companyName = _currentCompany || "";
+  const storedFile  = sessionStorage.getItem("pdf_filename_" + companyName);
+  const finLabel    = storedFile || src.financials || "Company Annual Reports (PDF)";
+  const qLabel      = storedFile || src.quarters   || "Company Quarterly Reports (PDF)";
 
   const map = {
     "income-source-chip":   { icon: "📄", text: finLabel },
     "bs-source-chip":       { icon: "📄", text: finLabel },
     "cf-source-chip":       { icon: "📄", text: finLabel },
     "qoq-source-chip":      { icon: "📄", text: qLabel },
-    "analysis-source-chip": { icon: "🤖", text: src.analysis },
   };
   Object.entries(map).forEach(([id, { icon, text }]) => {
     const chip = document.getElementById(id);
     if (!chip || !text) return;
     chip.innerHTML = `${icon} Source: <em>${text}</em>`;
-  });
-}
-
-// ── HERO ──────────────────────────────────────────────
-function renderHero(d) {
-  const co  = d.company || {};
-  const mkt = d.market  || {};
-  const rec = d.recommendation || {};
-
-  document.getElementById("company-name").textContent = co.name || d.ticker || "—";
-
-  const meta = document.getElementById("company-meta");
-  meta.innerHTML = "";
-  [co.ticker, co.sector, co.industry, co.exchange].filter(Boolean).forEach((v, i) => {
-    const s = document.createElement("span");
-    s.textContent = v;
-    if (i > 0) s.className = "dot";
-    meta.appendChild(s);
-  });
-
-  const pb = document.getElementById("price-block");
-  pb.innerHTML = `
-    <div class="price-val">${fmt(mkt.price, 2)}<span class="price-cur">${mkt.currency || "SEK"}</span></div>
-    <div class="price-sub">
-      52-wk: ${fmt(mkt.week_52_low, 2)} – ${fmt(mkt.week_52_high, 2)}
-    </div>
-  `;
-
-  const rating = (rec.rating || "Hold").toLowerCase();
-  const rb = document.getElementById("rating-badge");
-  rb.className = "rating-badge " + rating;
-  rb.innerHTML = `<div>${rec.rating || "Hold"}</div><div style="font-size:0.65rem;opacity:0.7;margin-top:2px">Rating</div>`;
-
-  // Traffic light — illuminate the correct dot
-  ["sell", "hold", "buy"].forEach(r => {
-    const dot = document.getElementById("tl-" + r);
-    if (dot) dot.classList.toggle("active", r === rating);
-  });
-}
-
-// ── METRIC PILLS ─────────────────────────────────────
-function renderMetricPills(d) {
-  const mkt = d.market  || {};
-  const rat = d.ratios  || {};
-  // Only show metrics sourced from PDF parsing (no Finnhub paid data)
-  const pills = [
-    { label: "Dividend Yield", value: fmtPct(rat.dividend_yield), cls: rat.dividend_yield > 0 ? "green" : "" },
-    { label: "ROE",            value: fmtPct(rat.roe), cls: rat.roe > 10 ? "green" : rat.roe < 0 ? "red" : "" },
-    { label: "EPS",            value: rat.eps != null ? fmt(rat.eps, 2) + " " + _baseCcy() : "—" },
-  ];
-
-  const wrap = document.getElementById("metric-pills");
-  wrap.innerHTML = "";
-  pills.forEach(p => {
-    const div = el("div", "mpill");
-    div.innerHTML = `
-      <div class="pill-label">${p.label}</div>
-      <div class="pill-value ${p.cls || ""}">${p.value}</div>
-    `;
-    wrap.appendChild(div);
   });
 }
 
@@ -525,12 +436,10 @@ function renderSummary(d) {
   const rec = d.recommendation || {};
   const rat = d.ratios  || {};
 
-  // Financial highlights strip
   const pl0 = (d.profit_loss   || []).sort((a, b) => b.year - a.year)[0] || {};
   const bs0 = (d.balance_sheet || []).sort((a, b) => b.year - a.year)[0] || {};
   const kf0 = (d.key_figures   || []).sort((a, b) => b.year - a.year)[0] || {};
   const hlWrap = document.getElementById("summary-highlights");
-  // Fallback to d.ratios for values that may not be in key_figures
   const ccy = _currencyUnit;
   const hlItems = [
     { label: "Net Interest Income", raw: pl0.nii,               fmt: v => fmtE(v) + " " + ccy },
@@ -605,7 +514,8 @@ function renderSummary(d) {
     li.textContent = r;
     rl.appendChild(li);
   });
-  if (!d.risks || d.risks.length === 0) rl.innerHTML = '<li style="color:var(--text3)">None identified.</li>';
+  if (!d.risks || d.risks.length === 0)
+    rl.innerHTML = '<li style="color:var(--text3)">None identified.</li>';
 
   const ol = document.getElementById("opps-list");
   ol.innerHTML = "";
@@ -614,7 +524,8 @@ function renderSummary(d) {
     li.textContent = o;
     ol.appendChild(li);
   });
-  if (!d.opportunities || d.opportunities.length === 0) ol.innerHTML = '<li style="color:var(--text3)">None identified.</li>';
+  if (!d.opportunities || d.opportunities.length === 0)
+    ol.innerHTML = '<li style="color:var(--text3)">None identified.</li>';
 }
 
 // ── INCOME STATEMENT TAB ─────────────────────────────
@@ -805,7 +716,6 @@ function renderYoY(d) {
   const bsMap = Object.fromEntries(bs.map(r => [r.year, r]));
   const kfMap = Object.fromEntries(kf.map(r => [r.year, r]));
 
-  // Header: label | yr0 | Δ% | yr1 | Δ% | ... | yrN
   const nDelta = allYears.length - 1;
   const colSpan = 1 + allYears.length + nDelta;
 
@@ -871,7 +781,6 @@ function renderYoY(d) {
 
 // ── QOQ ANALYSIS TAB ─────────────────────────────────
 function renderQoQ(d) {
-  // quarters from API come newest-first; reverse to oldest-first for display
   const quarters = (d.quarters || []).slice().reverse().slice(-5);
   const wrap     = document.getElementById("qoq-table-wrap");
 
@@ -886,7 +795,6 @@ function renderQoQ(d) {
     { label: "Net Profit",   key: "net_income" },
   ];
 
-  // Header: currency | Q1 | QoQ% | Q2 | QoQ% | …
   let h = `<div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>${_currencyUnit}</th>`;
   quarters.forEach((q, i) => {
     h += `<th>${q.period}</th>`;
@@ -907,90 +815,399 @@ function renderQoQ(d) {
   wrap.innerHTML = h;
 }
 
-// ── AI ANALYSIS TAB ───────────────────────────────────
-function renderAnalysis(d) {
-  document.getElementById("analysis-text").textContent =
-    d.analysis || "No analysis available.";
-
-  const nl = document.getElementById("news-list");
-  nl.innerHTML = "";
-  (d.news || []).forEach(n => {
-    const sent = (n.sentiment || "neutral").toLowerCase();
-    const card = el("div", `news-card ${sent}`);
-    card.innerHTML = `
-      <div class="news-title">${n.title || "—"}</div>
-      <div class="news-summary">${n.summary || ""}</div>
-      <div class="news-meta">
-        <span><span class="sentiment-dot ${sent}"></span>${sent}</span>
-        <span>${n.date || "—"}</span>
-      </div>
-    `;
-    nl.appendChild(card);
-  });
-  if (!d.news || !d.news.length)
-    nl.innerHTML = '<p class="empty-state">No news available.</p>';
-}
-
-function makeTable(headers, rows) {
-  const ths = headers.map(h => `<th>${h}</th>`).join("");
-  const trs = rows.map(row => {
-    const tds = row.map((v, i) => {
-      if (i === 0) return `<td>${v}</td>`;
-      const cls = typeof v === "string" && v.startsWith("-") ? "neg" : "";
-      return `<td class="${cls}">${v}</td>`;
-    }).join("");
-    return `<tr>${tds}</tr>`;
-  }).join("");
-  return `<table class="data-table"><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
-}
-
 // ════════════════════════════════════════════════════════
-//  WELCOME MODAL
+//  UPLOAD & REPORTS VIEW
 // ════════════════════════════════════════════════════════
 
-function closeWelcome() {
-  document.getElementById("welcome-overlay").classList.add("hidden");
-  sessionStorage.setItem("welcomeSeen", "1");
+function _formatPeriod(period) {
+  return (period || "").replace(/_/g, " ").replace(/\b(\w)/g, c => c.toUpperCase());
 }
 
-function closeWelcomeOnOverlay(e) {
-  if (e.target === document.getElementById("welcome-overlay")) closeWelcome();
+function populateUploadDropdown(companies) {
+  const sel = document.getElementById("up-company-select");
+  const names = [...new Set((companies || []).map(c => c.company_name))].sort();
+  sel.innerHTML =
+    '<option value="" disabled selected>Select company…</option>' +
+    names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join("") +
+    '<option value="__new__">+ Add new company…</option>';
 }
 
-// Show welcome modal once per session
-(function () {
-  if (!sessionStorage.getItem("welcomeSeen")) {
-    document.getElementById("welcome-overlay").classList.remove("hidden");
+function onUpCompanyChange(val) {
+  const inp = document.getElementById("up-new-company");
+  if (val === "__new__") {
+    inp.classList.remove("hidden");
+    inp.focus();
+  } else {
+    inp.classList.add("hidden");
   }
-})();
+}
 
-// Set default view: My Reports if any reports exist, else Upload & Analyse
-(async function initDefaultView() {
+async function renderUploadView() {
+  const cardsEl = document.getElementById("company-cards");
   try {
-    const data = await _fetchReports();
-    if (data && data.tickers && data.tickers.length > 0) {
-      switchView("view-reports");
-    } else {
-      switchView("view-upload");
-    }
-  } catch (_) {
-    switchView("view-upload");
+    const data = await _fetchCompanies();
+    populateUploadDropdown(data.companies || []);
+    renderCompanyCards(data.companies || []);
+  } catch (err) {
+    cardsEl.innerHTML = '<p class="empty-state">Could not load companies — ' + esc(err.message) + '</p>';
   }
-})();
+}
 
-// Also close welcome on Escape (merged below with feedback Escape handler)
+function renderCompanyCards(companies) {
+  const wrap = document.getElementById("company-cards");
+  if (!companies || !companies.length) {
+    wrap.innerHTML = '<p class="empty-state">No companies yet. Upload a PDF to get started.</p>';
+    return;
+  }
+  wrap.innerHTML = companies.map(_renderCompanyCard).join("");
+}
+
+function _renderCompanyCard(c) {
+  const analysed   = !!c.analysed;
+  const reports    = c.reports || [];
+  const lastDate   = c.last_updated ? c.last_updated.slice(0, 10) : "";
+  const cnt        = reports.length;
+  const meta       = cnt + " report" + (cnt !== 1 ? "s" : "") + (lastDate ? " · " + lastDate : "");
+
+  const badge = analysed
+    ? '<span class="co-badge analysed">Analysed</span>'
+    : '<span class="co-badge pending">Not analysed</span>';
+
+  const btnLabel = analysed ? "Re-Analyse" : "Analyse";
+
+  const reportRows = reports.map(r => `
+    <tr>
+      <td>${esc(_formatPeriod(r.period))}</td>
+      <td>${esc(r.report_type ? r.report_type.charAt(0).toUpperCase() + r.report_type.slice(1) : "—")}</td>
+      <td>${esc(r.filename || "—")}</td>
+      <td>${esc((r.uploaded_at || "").slice(0, 10) || "—")}</td>
+      <td class="report-actions">
+        <button class="report-action-btn report-btn-delete"
+          data-company="${esc(c.company_name)}"
+          data-period="${esc(r.period)}"
+          data-report-type="${esc(r.report_type)}">Remove</button>
+      </td>
+    </tr>`).join("");
+
+  const tableHtml = cnt > 0
+    ? `<table class="reports-table">
+        <thead><tr><th>Period</th><th>Type</th><th>Filename</th><th>Uploaded</th><th></th></tr></thead>
+        <tbody>${reportRows}</tbody>
+       </table>`
+    : '<p class="empty-state" style="margin:0">No PDFs uploaded yet.</p>';
+
+  return `
+    <div class="co-card ${analysed ? "analysed" : "pending"}" data-company="${esc(c.company_name)}">
+      <div class="co-card-header">
+        <span class="co-card-name">${esc(c.company_name)}</span>
+        <div class="co-card-right">
+          ${badge}
+          <span class="co-card-meta">${esc(meta)}</span>
+          <span class="co-card-chevron">▶</span>
+        </div>
+      </div>
+      <div class="co-card-body hidden">
+        <div class="co-card-actions">
+          <button class="btn-analyse">${esc(btnLabel)}</button>
+          <span class="co-analyse-status"></span>
+        </div>
+        ${tableHtml}
+      </div>
+    </div>`;
+}
+
+// Event delegation for company cards
+document.getElementById("company-cards").addEventListener("click", async e => {
+  // Toggle card header
+  const header = e.target.closest(".co-card-header");
+  if (header) {
+    const body    = header.closest(".co-card").querySelector(".co-card-body");
+    const chevron = header.querySelector(".co-card-chevron");
+    body.classList.toggle("hidden");
+    chevron.textContent = body.classList.contains("hidden") ? "▶" : "▼";
+    return;
+  }
+
+  // Analyse / Re-Analyse button
+  const analyseBtn = e.target.closest(".btn-analyse");
+  if (analyseBtn) {
+    const card        = analyseBtn.closest(".co-card");
+    const companyName = card.dataset.company;
+    await _doAnalyse(companyName, analyseBtn, card);
+    return;
+  }
+
+  // Remove report button
+  const deleteBtn = e.target.closest(".report-btn-delete");
+  if (deleteBtn) {
+    const { company, period, reportType } = deleteBtn.dataset;
+    await _doDeleteReport(company, period, reportType, deleteBtn);
+    return;
+  }
+});
+
+async function _doAnalyse(companyName, btn, card) {
+  const statusEl   = card.querySelector(".co-analyse-status");
+  const origText   = btn.textContent;
+  btn.disabled     = true;
+  btn.textContent  = "Analysing…";
+  statusEl.textContent = "";
+  statusEl.className   = "co-analyse-status";
+
+  try {
+    const resp = await fetch("/api/analyse", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ company_name: companyName }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      statusEl.textContent = err.error || "Analysis failed";
+      statusEl.className = "co-analyse-status error";
+      btn.disabled = false;
+      btn.textContent = origText;
+      return;
+    }
+
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split("\n\n");
+      buf = parts.pop();
+
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data:")) continue;
+        let evt;
+        try { evt = JSON.parse(line.slice(5).trim()); }
+        catch { continue; }
+
+        if (evt.type === "progress") {
+          btn.textContent = `Analysing… ${evt.step}/${evt.total}`;
+          statusEl.textContent = evt.message;
+
+        } else if (evt.type === "done") {
+          // Refresh cards and dropdowns
+          _companiesCache = null;
+          const data = await _fetchCompanies();
+          populateUploadDropdown(data.companies || []);
+          renderCompanyCards(data.companies || []);
+          populateDeskDropdown(data.companies || []);
+          return;
+
+        } else if (evt.type === "error") {
+          statusEl.textContent = evt.message || "Analysis failed";
+          statusEl.className = "co-analyse-status error";
+          btn.disabled = false;
+          btn.textContent = origText;
+          return;
+        }
+      }
+    }
+  } catch (err) {
+    statusEl.textContent = "Network error: " + err.message;
+    statusEl.className = "co-analyse-status error";
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+}
+
+async function _doDeleteReport(companyName, period, reportType, btn) {
+  const periodLabel = _formatPeriod(period);
+  const confirmed   = confirm(
+    `Remove ${periodLabel} ${reportType} for ${companyName}?\nThis cannot be undone.`
+  );
+  if (!confirmed) return;
+
+  const row    = btn.closest("tr");
+  btn.disabled = true;
+  btn.textContent = "Removing…";
+
+  try {
+    const resp = await fetch("/api/delete_report", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ company_name: companyName, period, report_type: reportType }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.error) {
+      alert(data.error || "Failed to remove report");
+      btn.disabled = false;
+      btn.textContent = "Remove";
+      return;
+    }
+    // Remove row, refresh lists
+    if (row) row.remove();
+    _companiesCache = null;
+    const freshData = await _fetchCompanies();
+    populateUploadDropdown(freshData.companies || []);
+    renderCompanyCards(freshData.companies || []);
+  } catch (err) {
+    alert("Network error: " + err.message);
+    btn.disabled = false;
+    btn.textContent = "Remove";
+  }
+}
+
+// ════════════════════════════════════════════════════════
+//  PDF UPLOAD (inline form in view-upload)
+// ════════════════════════════════════════════════════════
+
+if (typeof pdfjsLib !== "undefined") {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}
+
+async function extractPdfText(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf   = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+  const total = pdf.numPages;
+  const MAX_PAGES = 400;
+
+  const coverEnd  = Math.min(30, total);
+  const bodyStart = Math.max(coverEnd + 1, Math.floor(total * 0.40));
+  const bodyEnd   = Math.min(total, bodyStart + (MAX_PAGES - coverEnd));
+
+  const pageNums = [];
+  for (let i = 1; i <= coverEnd; i++) pageNums.push(i);
+  for (let i = bodyStart; i <= bodyEnd; i++) pageNums.push(i);
+
+  const parts = [];
+  for (const i of pageNums) {
+    const page    = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const text    = content.items.map(item => item.str).join(" ");
+    if (text.trim()) parts.push(text);
+  }
+  return parts.join("\n\n");
+}
+
+let _uploadFile = null;
+
+document.getElementById("up-file-input").addEventListener("change", e => {
+  _uploadFile = e.target.files[0] || null;
+  document.getElementById("up-file-name-label").textContent = _uploadFile ? _uploadFile.name : "";
+  e.target.value = "";
+});
+
+async function submitUpload() {
+  const sel        = document.getElementById("up-company-select");
+  const newInp     = document.getElementById("up-new-company");
+  const companyName = sel.value === "__new__"
+    ? newInp.value.trim()
+    : sel.value;
+
+  const year       = document.getElementById("up-year").value;
+  const periodType = document.getElementById("up-period-type").value;
+  const period     = periodType === "Annual" ? year : `${periodType} ${year}`;
+  const reportType = periodType === "Annual" ? "annual" : "quarterly";
+
+  const errorEl    = document.getElementById("up-error");
+  const successEl  = document.getElementById("up-success");
+  const submitBtn  = document.getElementById("up-submit-btn");
+  const progressEl = document.getElementById("up-progress");
+  const progText   = document.getElementById("up-progress-text");
+  const progFill   = document.getElementById("up-progress-fill");
+
+  errorEl.classList.add("hidden");
+  successEl.classList.add("hidden");
+
+  if (!companyName) { _showUploadError("Company name is required."); return; }
+  if (!_uploadFile) { _showUploadError("Please choose a PDF file."); return; }
+
+  submitBtn.disabled = true;
+  progFill.style.width = "0%";
+  progressEl.classList.remove("hidden");
+
+  progText.textContent = "Extracting text from PDF…";
+  progFill.style.width = "30%";
+
+  let pdfText;
+  try {
+    pdfText = await extractPdfText(_uploadFile);
+  } catch (err) {
+    _showUploadError("Could not read PDF — is it scanned/image-only?");
+    submitBtn.disabled = false;
+    progressEl.classList.add("hidden");
+    return;
+  }
+
+  if (!pdfText || pdfText.trim().length < 200) {
+    _showUploadError("Extracted text too short — is this a scanned PDF?");
+    submitBtn.disabled = false;
+    progressEl.classList.add("hidden");
+    return;
+  }
+
+  progText.textContent = "Uploading…";
+  progFill.style.width = "70%";
+
+  try {
+    const res  = await fetch("/api/upload", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        company_name: companyName,
+        report_type:  reportType,
+        period,
+        pdf_text:     pdfText,
+        filename:     _uploadFile.name,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      _showUploadError(data.error || `Upload failed (${res.status})`);
+      submitBtn.disabled = false;
+      progressEl.classList.add("hidden");
+      return;
+    }
+
+    // Store filename for source chips
+    sessionStorage.setItem("pdf_filename_" + companyName, _uploadFile.name);
+
+    progFill.style.width = "100%";
+    progressEl.classList.add("hidden");
+    successEl.textContent = "Report uploaded successfully.";
+    successEl.classList.remove("hidden");
+
+    _uploadFile = null;
+    document.getElementById("up-file-name-label").textContent = "";
+
+    // Refresh lists
+    _companiesCache = null;
+    const freshData = await _fetchCompanies();
+    populateUploadDropdown(freshData.companies || []);
+    renderCompanyCards(freshData.companies || []);
+    populateDeskDropdown(freshData.companies || []);
+
+    setTimeout(() => {
+      successEl.classList.add("hidden");
+      submitBtn.disabled = false;
+    }, 3000);
+  } catch (err) {
+    _showUploadError("Network error: " + err.message);
+    submitBtn.disabled = false;
+    progressEl.classList.add("hidden");
+  }
+}
+
+function _showUploadError(msg) {
+  const el = document.getElementById("up-error");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+}
 
 // ════════════════════════════════════════════════════════
 //  FEEDBACK MODAL
 // ════════════════════════════════════════════════════════
 
 function openFeedback() {
-  // Pre-fill ticker if a stock is loaded
-  const tickerInput = document.getElementById("ticker-input");
-  const fbTicker    = document.getElementById("fb-ticker");
-  if (tickerInput.value.trim() && !fbTicker.value) {
-    fbTicker.value = tickerInput.value.trim().toUpperCase();
-  }
   document.getElementById("feedback-overlay").classList.remove("hidden");
   document.getElementById("fb-message").focus();
 }
@@ -1000,36 +1217,25 @@ function closeFeedback() {
 }
 
 function closeFeedbackOnOverlay(e) {
-  // Close only when clicking the dark backdrop, not the modal card itself
   if (e.target === document.getElementById("feedback-overlay")) closeFeedback();
 }
 
-// Close on Escape key (both modals)
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape") {
-    closeFeedback();
-    closeWelcome();
-  }
+  if (e.key === "Escape") closeFeedback();
 });
 
-// Submit via fetch — no page reload
 document.getElementById("feedback-form").addEventListener("submit", async e => {
   e.preventDefault();
-
   const message = document.getElementById("fb-message").value.trim();
-  if (!message) {
-    document.getElementById("fb-message").focus();
-    return;
-  }
+  if (!message) { document.getElementById("fb-message").focus(); return; }
 
   const submitBtn = document.getElementById("fb-submit-btn");
   submitBtn.disabled = true;
   submitBtn.textContent = "Sending…";
 
   try {
-    // Build payload explicitly so Formspree field names are reliable
     const payload = new FormData();
-    payload.append("ticker",  document.getElementById("fb-ticker").value.trim());
+    payload.append("company", document.getElementById("fb-company").value.trim());
     payload.append("message", message);
 
     const res = await fetch("https://formspree.io/f/xlgarjwy", {
@@ -1041,7 +1247,6 @@ document.getElementById("feedback-form").addEventListener("submit", async e => {
     if (res.ok) {
       document.getElementById("feedback-form").classList.add("hidden");
       document.getElementById("fb-success").classList.remove("hidden");
-      // Auto-close after 3 s and reset for next use
       setTimeout(() => {
         closeFeedback();
         setTimeout(() => {
@@ -1063,255 +1268,7 @@ document.getElementById("feedback-form").addEventListener("submit", async e => {
 });
 
 // ════════════════════════════════════════════════════════
-//  PDF UPLOAD MODAL
+//  BOOT
 // ════════════════════════════════════════════════════════
 
-// Configure pdf.js worker (CDN must match the main script version)
-if (typeof pdfjsLib !== "undefined") {
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-}
-
-async function extractPdfText(file) {
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
-  const total = pdf.numPages;
-  const MAX_PAGES = 400;
-
-  // Annual reports bury financial statements in the latter half (often pages 150–334+).
-  // Strategy: extract up to 30 cover pages for context, then prioritise from 40% of
-  // the document onwards, up to MAX_PAGES total pages extracted.
-  const coverEnd  = Math.min(30, total);
-  const bodyStart = Math.max(coverEnd + 1, Math.floor(total * 0.40));
-  const bodyEnd   = Math.min(total, bodyStart + (MAX_PAGES - coverEnd));
-
-  const pageNums = [];
-  for (let i = 1; i <= coverEnd; i++) pageNums.push(i);
-  for (let i = bodyStart; i <= bodyEnd; i++) pageNums.push(i);
-
-  console.log(
-    `[pdf] total=${total} pages | extracting cover 1–${coverEnd}, body ${bodyStart}–${bodyEnd}` +
-    ` (${pageNums.length} pages)`
-  );
-
-  const parts = [];
-  for (const i of pageNums) {
-    const page    = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const text    = content.items.map(item => item.str).join(" ");
-    if (text.trim()) parts.push(text);
-  }
-  return parts.join("\n\n");
-}
-
-// ── Upload state ──────────────────────────────────────
-// Each entry: { file: File, year: number, reportType: "annual"|"quarterly", quarter: "Q1"|…|"Q4" }
-let _uploadFiles = [];
-const _CURRENT_YEAR = new Date().getFullYear();
-
-function _yearOptions(selected) {
-  let html = "";
-  for (let y = _CURRENT_YEAR; y >= 2015; y--) {
-    html += `<option value="${y}"${y === selected ? " selected" : ""}>${y}</option>`;
-  }
-  return html;
-}
-
-function _renderUploadFileList() {
-  const list = document.getElementById("up-file-list");
-  if (!_uploadFiles.length) {
-    list.innerHTML = '<p class="up-empty">No files added yet. Click "+ Add PDF files" to begin.</p>';
-    return;
-  }
-  list.innerHTML = "";
-  _uploadFiles.forEach((item, i) => {
-    const entry = document.createElement("div");
-    entry.className = "up-file-entry";
-    entry.innerHTML = `
-      <div class="up-file-info">
-        <span class="up-file-name" title="${item.file.name}">${item.file.name}</span>
-        <button class="up-file-remove" onclick="_removeUploadFile(${i})" aria-label="Remove">✕</button>
-      </div>
-      <div class="up-file-meta">
-        <select class="up-sel up-year" onchange="_uploadFiles[${i}].year=+this.value">
-          ${_yearOptions(item.year)}
-        </select>
-        <select class="up-sel up-rtype" onchange="_setUploadRtype(${i},this.value)">
-          <option value="annual"${item.reportType==="annual"?" selected":""}>Annual</option>
-          <option value="quarterly"${item.reportType==="quarterly"?" selected":""}>Quarterly</option>
-        </select>
-        <select class="up-sel up-quarter"
-                style="display:${item.reportType==="quarterly"?"":"none"}"
-                onchange="_uploadFiles[${i}].quarter=this.value">
-          <option value="Q1"${item.quarter==="Q1"?" selected":""}>Q1</option>
-          <option value="Q2"${item.quarter==="Q2"?" selected":""}>Q2</option>
-          <option value="Q3"${item.quarter==="Q3"?" selected":""}>Q3</option>
-          <option value="Q4"${item.quarter==="Q4"?" selected":""}>Q4</option>
-        </select>
-      </div>
-    `;
-    list.appendChild(entry);
-  });
-}
-
-function _removeUploadFile(idx) {
-  _uploadFiles.splice(idx, 1);
-  _renderUploadFileList();
-}
-
-function _setUploadRtype(idx, val) {
-  _uploadFiles[idx].reportType = val;
-  _renderUploadFileList();
-}
-
-document.getElementById("up-file-input").addEventListener("change", e => {
-  Array.from(e.target.files).forEach(f => {
-    _uploadFiles.push({ file: f, year: _CURRENT_YEAR, reportType: "annual", quarter: "Q1" });
-  });
-  _renderUploadFileList();
-  e.target.value = "";
-});
-
-function openUpload() {
-  const loaded = document.getElementById("ticker-input").value.trim().toUpperCase();
-  const upTicker = document.getElementById("up-ticker");
-  if (loaded && !upTicker.value) upTicker.value = loaded;
-  _renderUploadFileList();
-  document.getElementById("upload-overlay").classList.remove("hidden");
-  upTicker.focus();
-}
-
-function closeUpload() {
-  document.getElementById("upload-overlay").classList.add("hidden");
-}
-
-function closeUploadOnOverlay(e) {
-  if (e.target === document.getElementById("upload-overlay")) closeUpload();
-}
-
-document.addEventListener("keydown", e => {
-  if (e.key === "Escape") closeUpload();
-}, { capture: false });
-
-async function submitUpload() {
-  const ticker    = document.getElementById("up-ticker").value.trim().toUpperCase();
-  const errorEl   = document.getElementById("up-error");
-  const successEl = document.getElementById("up-success");
-  const submitBtn = document.getElementById("up-submit-btn");
-  const progressEl   = document.getElementById("up-progress");
-  const progressText = document.getElementById("up-progress-text");
-  const progressFill = document.getElementById("up-progress-fill");
-
-  errorEl.classList.add("hidden");
-  errorEl.textContent = "";
-
-  if (!ticker)             { showUploadError("Ticker is required."); return; }
-  if (!_uploadFiles.length){ showUploadError("Add at least one PDF file."); return; }
-
-  submitBtn.disabled = true;
-  progressFill.style.width = "0%";
-  progressEl.classList.remove("hidden");
-
-  const total = _uploadFiles.length;
-  let successCount = 0;
-
-  for (let i = 0; i < total; i++) {
-    const item = _uploadFiles[i];
-
-    // ── Extract text ──────────────────────────────────
-    progressText.textContent =
-      `Extracting text from file ${i + 1} of ${total}: ${item.file.name}…`;
-    progressFill.style.width = `${Math.round(((i + 0.3) / total) * 100)}%`;
-
-    let pdfText;
-    try {
-      pdfText = await extractPdfText(item.file);
-    } catch (err) {
-      showUploadError(`${item.file.name}: could not read PDF — is it scanned/image-only?`);
-      submitBtn.disabled = false;
-      progressEl.classList.add("hidden");
-      return;
-    }
-    if (!pdfText || pdfText.trim().length < 200) {
-      showUploadError(`${item.file.name}: extracted text too short.`);
-      submitBtn.disabled = false;
-      progressEl.classList.add("hidden");
-      return;
-    }
-
-    // ── Upload ────────────────────────────────────────
-    const period = item.reportType === "quarterly"
-      ? `${item.quarter} ${item.year}`
-      : String(item.year);
-
-    progressText.textContent =
-      `Uploading file ${i + 1} of ${total}: ${item.file.name} (${period})…`;
-    progressFill.style.width = `${Math.round(((i + 0.7) / total) * 100)}%`;
-
-    try {
-      const res  = await fetch("/api/upload", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ticker,
-          report_type: item.reportType,
-          period,
-          pdf_text: pdfText,
-          filename: item.file.name,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        showUploadError(`${item.file.name}: ${data.error || `Upload failed (${res.status})`}`);
-        submitBtn.disabled = false;
-        progressEl.classList.add("hidden");
-        return;
-      }
-      successCount++;
-      // Store the filename so renderSourceChips can display it even after analysis
-      if (item.reportType === "annual") {
-        sessionStorage.setItem("pdf_filename_" + ticker, item.file.name);
-      }
-    } catch (err) {
-      showUploadError(`${item.file.name}: network error — ${err.message}`);
-      submitBtn.disabled = false;
-      progressEl.classList.add("hidden");
-      return;
-    }
-
-    progressFill.style.width = `${Math.round(((i + 1) / total) * 100)}%`;
-
-    // 5-second delay between files (not after the last one)
-    if (i < total - 1) {
-      const remaining = total - i - 1;
-      progressText.textContent =
-        `Waiting 5 s before next upload… (${remaining} file${remaining > 1 ? "s" : ""} remaining)`;
-      await new Promise(r => setTimeout(r, 5000));
-    }
-  }
-
-  // ── All done ──────────────────────────────────────
-  progressEl.classList.add("hidden");
-  successEl.textContent =
-    `✦ ${successCount} file${successCount > 1 ? "s" : ""} uploaded successfully. Click Analyse to run fresh analysis.`;
-  successEl.classList.remove("hidden");
-  document.getElementById("ticker-input").value = ticker;
-
-  setTimeout(() => {
-    closeUpload();
-    setTimeout(() => {
-      _uploadFiles = [];
-      _renderUploadFileList();
-      successEl.classList.add("hidden");
-      errorEl.classList.add("hidden");
-      progressFill.style.width = "0%";
-      submitBtn.disabled = false;
-    }, 400);
-  }, 3000);
-}
-
-function showUploadError(msg) {
-  const el = document.getElementById("up-error");
-  el.textContent = msg;
-  el.classList.remove("hidden");
-}
+initApp();
