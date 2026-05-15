@@ -138,7 +138,7 @@ async function onUploadSubmit(e) {
     fd.append("file_type",      fileType);
     fd.append("file",           _chosenFile, _chosenFile.name);
     if (fileType === "pdf") {
-      extractedText = extractedText.substring(0, 40000);
+      extractedText = extractedText.substring(0, 20000);
       fd.append("extracted_text", extractedText);
     }
 
@@ -179,8 +179,8 @@ const _FINANCIAL_KEYWORDS = [
   "net interest", "total income", "net profit", "profit before",
   "total assets", "total equity", "net commission", "staff costs",
   "return on equity", "cet1", "cost/income", "eps",
-  "rörelseresultat", "räntenetto", "summa tillgångar", "eget kapital",
-  "rörelsekostnader",
+  "räntenetto", "summa tillgångar", "eget kapital", "rörelseresultat",
+  "kreditförluster", "provisionsnetto", "rörelsekostnader", "avkastning",
 ];
 
 async function extractPdfText(file) {
@@ -188,19 +188,20 @@ async function extractPdfText(file) {
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
   const n   = pdf.numPages;
 
-  const financialPages = [];
+  const scored = [];
   for (let i = 1; i <= n; i++) {
     const page    = await pdf.getPage(i);
     const content = await page.getTextContent();
     const text    = content.items.map(it => it.str).join(" ");
     const lower   = text.toLowerCase();
-    if (_FINANCIAL_KEYWORDS.some(kw => lower.includes(kw))) {
-      financialPages.push(text);
-    }
+    const score   = _FINANCIAL_KEYWORDS.reduce((s, kw) => s + (lower.includes(kw) ? 1 : 0), 0);
+    if (score > 0) scored.push({ text, score });
   }
 
-  const combined = financialPages.join("\n\n").substring(0, 40000);
-  console.log(`Total pages: ${n}, Financial pages found: ${financialPages.length}, Text length: ${combined.length}`);
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored.slice(0, 20).map(p => p.text);
+  const combined = top.join("\n\n").substring(0, 20000);
+  console.log("Sending top 20 financial pages, text length: " + combined.length);
   return combined;
 }
 
