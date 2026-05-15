@@ -1,8 +1,11 @@
 """
 upload.py — /api/upload handler.
 
-Accepts multipart POST with fields:
-  company_name, sector, period, report_type, file_type, file, extracted_text
+For PDF uploads: accepts application/json with fields:
+  company_name, sector, period, report_type, file_type, extracted_text
+
+For Excel uploads: accepts multipart/form-data with fields:
+  company_name, sector, period, report_type, file_type, file
 
 For Excel: extracts text via openpyxl.
 For PDF: uses extracted_text provided by the client (pdf.js).
@@ -34,13 +37,27 @@ def handle_upload():
 def _handle_upload_inner():
     from flask import request
 
-    company_name   = (request.form.get("company_name") or "").strip()
-    sector         = (request.form.get("sector") or "").strip()
-    period         = (request.form.get("period") or "").strip()
-    report_type    = (request.form.get("report_type") or "").strip().lower()
-    file_type      = (request.form.get("file_type") or "").strip().lower()
-    extracted_text = (request.form.get("extracted_text") or "").strip()[:20000]
-    uploaded_file  = request.files.get("file")
+    content_type = request.content_type or ""
+
+    if content_type.startswith("application/json"):
+        # PDF uploads send JSON to avoid multipart overhead exceeding Vercel's 4.5MB limit
+        body           = request.get_json(force=True) or {}
+        company_name   = (body.get("company_name") or "").strip()
+        sector         = (body.get("sector") or "").strip()
+        period         = (body.get("period") or "").strip()
+        report_type    = (body.get("report_type") or "").strip().lower()
+        file_type      = (body.get("file_type") or "").strip().lower()
+        extracted_text = (body.get("extracted_text") or "").strip()[:20000]
+        uploaded_file  = None
+    else:
+        # Excel uploads send multipart/form-data with the file binary
+        company_name   = (request.form.get("company_name") or "").strip()
+        sector         = (request.form.get("sector") or "").strip()
+        period         = (request.form.get("period") or "").strip()
+        report_type    = (request.form.get("report_type") or "").strip().lower()
+        file_type      = (request.form.get("file_type") or "").strip().lower()
+        extracted_text = ""
+        uploaded_file  = request.files.get("file")
 
     print(f"[upload] company={company_name!r} sector={sector!r} period={period!r} "
           f"report_type={report_type!r} file_type={file_type!r}")
@@ -56,8 +73,10 @@ def _handle_upload_inner():
         return _json({"success": False, "error": "report_type must be 'quarterly' or 'annual'"}, 400)
     if file_type not in ("excel", "pdf"):
         return _json({"success": False, "error": "file_type must be 'excel' or 'pdf'"}, 400)
-    if uploaded_file is None:
+    if file_type == "excel" and uploaded_file is None:
         return _json({"success": False, "error": "file is required"}, 400)
+
+    filename = (uploaded_file.filename if uploaded_file else None) or f"{company_name}_{period}.{file_type}"
 
     # --- Extract content ---
     try:
@@ -81,7 +100,6 @@ def _handle_upload_inner():
     # --- Supabase inserts ---
     try:
         period_date = _period_to_date(period)
-        filename = uploaded_file.filename or f"{company_name}_{period}.{file_type}"
         _save_to_supabase(company_name, sector, period, report_type, file_type,
                           filename, financial_data, period_date)
     except Exception as e:

@@ -130,20 +130,32 @@ async function onUploadSubmit(e) {
   setStatus("Uploading…");
 
   try {
-    const fd = new FormData();
-    fd.append("company_name",   companyName);
-    fd.append("sector",         sector);
-    fd.append("period",         period);
-    fd.append("report_type",    reportType);
-    fd.append("file_type",      fileType);
-    fd.append("file",           _chosenFile, _chosenFile.name);
+    let resp;
     if (fileType === "pdf") {
-      extractedText = extractedText.substring(0, 20000);
-      fd.append("extracted_text", extractedText);
+      // Send JSON to avoid multipart overhead exceeding Vercel's 4.5MB body size limit
+      const payload = {
+        company_name:   companyName,
+        sector:         sector,
+        period:         period,
+        report_type:    reportType,
+        file_type:      fileType,
+        extracted_text: extractedText,
+      };
+      resp = await fetch("/api/upload", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(payload),
+      });
+    } else {
+      const fd = new FormData();
+      fd.append("company_name",   companyName);
+      fd.append("sector",         sector);
+      fd.append("period",         period);
+      fd.append("report_type",    reportType);
+      fd.append("file_type",      fileType);
+      fd.append("file",           _chosenFile, _chosenFile.name);
+      resp = await fetch("/api/upload", { method: "POST", body: fd });
     }
-
-    console.log("FormData extracted_text size in bytes:", new Blob([extractedText]).size);
-    const resp = await fetch("/api/upload", { method: "POST", body: fd });
     const data = await resp.json().catch(() => ({}));
 
     if (!resp.ok || !data.success) {
