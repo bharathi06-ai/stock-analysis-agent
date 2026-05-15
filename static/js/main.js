@@ -138,6 +138,7 @@ async function onUploadSubmit(e) {
     fd.append("file_type",      fileType);
     fd.append("file",           _chosenFile, _chosenFile.name);
     if (fileType === "pdf") {
+      extractedText = extractedText.substring(0, 50000);
       fd.append("extracted_text", extractedText);
     }
 
