@@ -30,8 +30,8 @@
     </div>
 
     <nav class="sd-nav-links" aria-label="Main navigation">
-      <a class="sd-nav-link sd-nav-link--active" href="#">Upload</a>
-      <a class="sd-nav-link" href="#">Companies</a>
+      <a class="sd-nav-link sd-nav-link--active" href="#" data-screen="upload">Upload</a>
+      <a class="sd-nav-link" href="#" data-screen="companies">Companies</a>
     </nav>
 
   </div>
@@ -41,7 +41,7 @@
 <!-- ════════════════════════════════════════
      SCREEN 1 — UPLOAD
 ════════════════════════════════════════ -->
-<main class="sd-main">
+<main id="screen-upload" class="sd-main">
 
   <!-- ── Section 1 : Upload form ───────────────────────── -->
   <section class="sd-card" aria-label="Upload report">
@@ -158,6 +158,65 @@
   </section>
 
 </main>
+
+
+<!-- ════════════════════════════════════════
+     SCREEN 2 — COMPANY VIEW
+════════════════════════════════════════ -->
+<div id="screen-companies" class="cv-screen hidden">
+
+  <!-- Controls: company dropdown + period toggle -->
+  <div class="cv-controls">
+    <div class="cv-controls-inner">
+      <div class="cv-company-field">
+        <label class="cv-label" for="cv-company-sel">Company</label>
+        <select id="cv-company-sel" class="cv-select">
+          <option value="">Loading…</option>
+        </select>
+      </div>
+      <div class="cv-period-toggle">
+        <button class="cv-toggle-btn cv-toggle-btn--active" data-period="quarterly">Quarterly</button>
+        <button class="cv-toggle-btn" data-period="annual">Annual</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="cv-tab-bar">
+    <div class="cv-tab-bar-inner">
+      <button class="cv-tab cv-tab--active" data-tab="income">Income Statement</button>
+      <button class="cv-tab" data-tab="balance">Balance Sheet</button>
+      <button class="cv-tab" data-tab="ratios">Key Ratios</button>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div class="cv-content">
+
+    <div id="cv-state-msg" class="cv-state-text hidden">Loading…</div>
+
+    <div id="cv-panel-income" class="cv-panel">
+      <div class="cv-table-wrap">
+        <table id="cv-table-income" class="cv-table"></table>
+      </div>
+    </div>
+
+    <div id="cv-panel-balance" class="cv-panel hidden">
+      <div class="cv-table-wrap">
+        <table id="cv-table-balance" class="cv-table"></table>
+      </div>
+    </div>
+
+    <div id="cv-panel-ratios" class="cv-panel hidden">
+      <div class="cv-table-wrap">
+        <table id="cv-table-ratios" class="cv-table"></table>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
 
 <script src="/static/js/main.js"></script>
 </body>

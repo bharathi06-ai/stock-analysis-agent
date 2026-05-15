@@ -219,6 +219,18 @@ def upload():
     return handle_upload()
 
 
+@app.route("/api/companies", methods=["GET"])
+def companies():
+    from api.companies import handle_companies
+    return handle_companies()
+
+
+@app.route("/api/financials", methods=["GET"])
+def financials():
+    from api.financials import handle_financials
+    return handle_financials()
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
     app.run(debug=True, port=port)

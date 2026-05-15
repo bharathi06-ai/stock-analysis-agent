@@ -2166,3 +2166,235 @@ button#analyse-btn:disabled { background: var(--text3); cursor: not-allowed; }
   .sd-input           { max-width: 100%; }
   .sd-select          { max-width: 100%; }
 }
+
+/* ══════════════════════════════════════════
+   COMPANY VIEW — SCREEN 2  (cv- prefix)
+══════════════════════════════════════════ */
+
+/* ── Controls bar ─────────────────────────────────────── */
+
+.cv-controls {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+}
+
+.cv-controls-inner {
+  max-width: 1340px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.cv-company-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cv-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  flex-shrink: 0;
+}
+
+.cv-select {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--white);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  min-width: 200px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.cv-select:focus { border-color: var(--black); }
+
+.cv-period-toggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-left: auto;
+}
+
+.cv-toggle-btn {
+  padding: 6px 18px;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text2);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.cv-toggle-btn + .cv-toggle-btn { border-left: 1px solid var(--border); }
+.cv-toggle-btn--active { background: var(--black); color: var(--white); }
+
+/* ── Tab bar ──────────────────────────────────────────── */
+
+.cv-tab-bar {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+}
+
+.cv-tab-bar-inner {
+  max-width: 1340px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: flex;
+}
+
+.cv-tab {
+  padding: 11px 18px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text3);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-bottom-color 0.15s;
+}
+
+.cv-tab:hover { color: var(--text); }
+.cv-tab--active { color: var(--text); font-weight: 500; border-bottom-color: var(--black); }
+
+/* ── Content area ─────────────────────────────────────── */
+
+.cv-content {
+  max-width: 1340px;
+  margin: 0 auto;
+  padding: 24px 24px 60px;
+}
+
+.cv-state-text {
+  font-size: 13px;
+  color: var(--text3);
+  padding: 48px 0;
+  text-align: center;
+}
+
+/* ── Table container ──────────────────────────────────── */
+
+.cv-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+/* ── The Screener-style table ─────────────────────────── */
+
+.cv-table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.cv-table th,
+.cv-table td {
+  padding: 8px 18px;
+  white-space: nowrap;
+  text-align: right;
+  border-bottom: 1px solid var(--border2);
+}
+
+/* Sticky first column (row labels) */
+.cv-table th:first-child,
+.cv-table td:first-child {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 220px;
+  border-right: 1px solid var(--border);
+  box-shadow: 2px 0 4px rgba(0,0,0,0.04);
+}
+
+/* Header cells */
+.cv-table thead th {
+  background: var(--off);
+  color: var(--text3);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Currency row: de-emphasise the label column */
+.cv-table .cv-currency-row th:first-child {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.cv-currency-cell {
+  text-align: right;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* Body: row-label column */
+.cv-table tbody td:first-child {
+  background: var(--white);
+  color: var(--text2);
+  font-weight: 400;
+}
+
+/* Body: data cells */
+.cv-table tbody td {
+  color: var(--text);
+}
+
+/* Hover */
+.cv-table tbody tr:hover td           { background: var(--light); }
+.cv-table tbody tr:hover td:first-child { background: var(--light); }
+
+/* Bold / subtotal rows */
+.cv-table tbody tr.cv-bold td {
+  font-weight: 600;
+  color: var(--text);
+  background: var(--off);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.cv-table tbody tr.cv-bold td:first-child {
+  background: var(--off);
+}
+
+.cv-table tbody tr.cv-bold:hover td           { background: #ebebeb; }
+.cv-table tbody tr.cv-bold:hover td:first-child { background: #ebebeb; }
+
+/* Number cells */
+.cv-num { font-variant-numeric: tabular-nums; }
+
+/* Negative values */
+.cv-neg { color: var(--neg) !important; }
+
+/* Remove bottom border from last body row */
+.cv-table tbody tr:last-child td { border-bottom: none; }
+
+/* ── Responsive ───────────────────────────────────────── */
+
+@media (max-width: 600px) {
+  .cv-controls     { padding: 10px 16px; }
+  .cv-content      { padding: 16px 16px 40px; }
+  .cv-period-toggle { margin-left: 0; }
+}
