@@ -138,7 +138,7 @@ async function onUploadSubmit(e) {
     fd.append("file_type",      fileType);
     fd.append("file",           _chosenFile, _chosenFile.name);
     if (fileType === "pdf") {
-      extractedText = extractedText.substring(0, 50000);
+      extractedText = extractedText.substring(0, 40000);
       fd.append("extracted_text", extractedText);
     }
 
@@ -174,28 +174,33 @@ async function onUploadSubmit(e) {
 }
 
 // ── PDF text extraction ───────────────────────────────────
+const _FINANCIAL_KEYWORDS = [
+  "net interest", "total income", "net profit", "profit before",
+  "total assets", "total equity", "net commission", "staff costs",
+  "return on equity", "cet1", "cost/income", "eps",
+  "rörelseresultat", "räntenetto", "summa tillgångar", "eget kapital",
+  "rörelsekostnader",
+];
+
 async function extractPdfText(file) {
-  const buf  = await file.arrayBuffer();
-  const pdf  = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
-  const n    = pdf.numPages;
-  const MAX  = 400;
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  const n   = pdf.numPages;
 
-  const coverEnd  = Math.min(30, n);
-  const bodyStart = Math.max(coverEnd + 1, Math.floor(n * 0.40));
-  const bodyEnd   = Math.min(n, bodyStart + (MAX - coverEnd));
-
-  const pageNums = [];
-  for (let i = 1; i <= coverEnd; i++)   pageNums.push(i);
-  for (let i = bodyStart; i <= bodyEnd; i++) pageNums.push(i);
-
-  const parts = [];
-  for (const i of pageNums) {
+  const financialPages = [];
+  for (let i = 1; i <= n; i++) {
     const page    = await pdf.getPage(i);
     const content = await page.getTextContent();
     const text    = content.items.map(it => it.str).join(" ");
-    if (text.trim()) parts.push(text);
+    const lower   = text.toLowerCase();
+    if (_FINANCIAL_KEYWORDS.some(kw => lower.includes(kw))) {
+      financialPages.push(text);
+    }
   }
-  return parts.join("\n\n");
+
+  const combined = financialPages.join("\n\n").substring(0, 40000);
+  console.log(`Total pages: ${n}, Financial pages found: ${financialPages.length}, Text length: ${combined.length}`);
+  return combined;
 }
 
 // ── Status helpers ────────────────────────────────────────

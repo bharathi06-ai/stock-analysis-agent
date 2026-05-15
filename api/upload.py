@@ -39,7 +39,7 @@ def _handle_upload_inner():
     period         = (request.form.get("period") or "").strip()
     report_type    = (request.form.get("report_type") or "").strip().lower()
     file_type      = (request.form.get("file_type") or "").strip().lower()
-    extracted_text = (request.form.get("extracted_text") or "").strip()[:50000]
+    extracted_text = (request.form.get("extracted_text") or "").strip()[:40000]
     uploaded_file  = request.files.get("file")
 
     print(f"[upload] company={company_name!r} sector={sector!r} period={period!r} "
