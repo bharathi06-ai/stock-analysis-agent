@@ -219,53 +219,35 @@ async function loadReports() {
     const resp = await fetch("/api/list_reports");
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
-    renderReportsTable(data.companies || []);
+    renderReportsTable(Array.isArray(data) ? data : []);
   } catch (err) {
     wrap.innerHTML =
       `<p class="sd-state-text">Could not load reports — ${esc(err.message)}</p>`;
   }
 }
 
-function renderReportsTable(companies) {
+function renderReportsTable(reports) {
   const wrap = document.getElementById("reports-wrap");
 
-  // Flatten: one row per report
-  const rows = [];
-  for (const c of companies) {
-    for (const r of (c.reports || [])) {
-      rows.push({
-        company:    c.company_name,
-        sector:     c.sector || "—",
-        period:     r.period  || "—",
-        type:       r.report_type || "—",
-        uploaded:   fmtDate(r.uploaded_at),
-        // delete params (API uses company+period+type; id used if present)
-        id:         r.id || null,
-        _period:    r.period,
-        _type:      r.report_type,
-      });
-    }
-  }
-
-  if (!rows.length) {
+  if (!reports.length) {
     wrap.innerHTML = '<p class="sd-state-text">No reports uploaded yet.</p>';
     return;
   }
 
-  const tbody = rows.map((r, i) => `
+  const tbody = reports.map((r, i) => `
     <tr>
-      <td class="td-company">${esc(r.company)}</td>
-      <td>${esc(r.sector)}</td>
-      <td class="td-period">${esc(r.period)}</td>
-      <td>${esc(capitalize(r.type))}</td>
-      <td class="td-date">${esc(r.uploaded)}</td>
+      <td class="td-company">${esc(r.company_name)}</td>
+      <td>${esc(r.sector || "—")}</td>
+      <td class="td-period">${esc(r.period || "—")}</td>
+      <td>${esc(capitalize(r.report_type || "—"))}</td>
+      <td class="td-date">${esc(fmtDate(r.uploaded_at))}</td>
       <td>
         <button class="sd-btn-delete"
           data-idx="${i}"
-          data-company="${esc(r.company)}"
-          data-period="${esc(r._period || "")}"
-          data-type="${esc(r._type || "")}"
-          ${r.id ? `data-id="${esc(r.id)}"` : ""}>
+          data-company="${esc(r.company_name)}"
+          data-period="${esc(r.period || "")}"
+          data-type="${esc(r.report_type || "")}"
+          data-id="${esc(r.id || "")}">
           Delete
         </button>
       </td>

@@ -170,18 +170,15 @@ def refresh():
 
 @app.route("/api/delete_report", methods=["POST"])
 def delete_report():
-    """Delete a single PDF entry from stock_pdf_store."""
+    """Delete a single report row from the reports table."""
     data = request.get_json(silent=True) or {}
+    report_id    = (data.get("id") or "").strip()
     company_name = (data.get("company_name") or "").strip()
     period       = (data.get("period") or "").strip()
     report_type  = (data.get("report_type") or "").strip().lower()
 
-    if not company_name:
-        return jsonify({"error": "company_name is required"}), 400
-    if not period:
-        return jsonify({"error": "period is required"}), 400
-    if report_type not in ("annual", "quarterly"):
-        return jsonify({"error": "report_type must be 'annual' or 'quarterly'"}), 400
+    if not report_id and not company_name:
+        return jsonify({"error": "id or company_name is required"}), 400
 
     from db import _get_client
     client = _get_client()
@@ -189,13 +186,21 @@ def delete_report():
         return jsonify({"error": "Database not configured"}), 500
 
     try:
-        client.table("stock_pdf_store") \
-            .delete() \
-            .eq("ticker", company_name) \
-            .eq("period", period) \
-            .eq("report_type", report_type) \
-            .execute()
-        print(f"[delete_report] Deleted {company_name} / {period} / {report_type}")
+        if report_id:
+            client.table("reports").delete().eq("id", report_id).execute()
+            print(f"[delete_report] Deleted report id={report_id}")
+        else:
+            if not period:
+                return jsonify({"error": "period is required"}), 400
+            if report_type not in ("annual", "quarterly"):
+                return jsonify({"error": "report_type must be 'annual' or 'quarterly'"}), 400
+            client.table("reports") \
+                .delete() \
+                .eq("company_name", company_name) \
+                .eq("period", period) \
+                .eq("report_type", report_type) \
+                .execute()
+            print(f"[delete_report] Deleted {company_name} / {period} / {report_type}")
         return jsonify({"success": True})
     except Exception as exc:
         print(f"[delete_report] Error: {exc}")
