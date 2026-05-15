@@ -142,6 +142,7 @@ async function onUploadSubmit(e) {
       fd.append("extracted_text", extractedText);
     }
 
+    console.log("FormData extracted_text size in bytes:", new Blob([extractedText]).size);
     const resp = await fetch("/api/upload", { method: "POST", body: fd });
     const data = await resp.json().catch(() => ({}));
 
