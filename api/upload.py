@@ -205,7 +205,7 @@ def _save_to_supabase(company_name, sector, period, report_type, file_type,
     from supabase import create_client
 
     url = os.environ["SUPABASE_URL"]
-    key = os.environ["SUPABASE_SERVICE_KEY"]
+    key = os.environ["SUPABASE_ANON_KEY"]
     sb = create_client(url, key)
 
     # Upsert company (ignore if already exists)
