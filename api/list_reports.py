@@ -1,8 +1,9 @@
 """
 list_reports.py — /api/list_reports endpoint.
 
-Returns all entries from stock_ai_cache grouped by ticker,
-without fetching extracted_data (too large).
+Returns all companies from stock_pdf_store grouped by company_name (stored in
+the ticker column), annotated with whether each has been analysed
+(exists in stock_ai_cache).
 """
 
 import sys
@@ -15,7 +16,6 @@ from flask import jsonify
 
 
 def handle_list_reports():
-    """Call this from the Flask route."""
     try:
         return _handle_list_reports_inner()
     except Exception as e:
@@ -31,49 +31,60 @@ def _handle_list_reports_inner():
         return jsonify({"error": "Database not configured — missing Supabase env vars"}), 500
 
     try:
-        cache_resp = (
-            client.table("stock_ai_cache")
-            .select("ticker, period, report_type, generated_at")
-            .order("ticker", desc=False)
-            .order("period", desc=False)
-            .execute()
-        )
+        # All PDFs (company_name stored in ticker column)
         pdf_resp = (
             client.table("stock_pdf_store")
-            .select("ticker, period, report_type, filename")
+            .select("ticker, period, report_type, filename, uploaded_at")
+            .order("ticker", desc=False)
+            .order("uploaded_at", desc=True)
+            .execute()
+        )
+        # All analysed entries (one row per company/period/type)
+        cache_resp = (
+            client.table("stock_ai_cache")
+            .select("ticker, generated_at")
             .execute()
         )
     except Exception as exc:
         print(f"[list_reports] Supabase query error:\n{traceback.format_exc()}")
         return jsonify({"error": f"Database query failed: {exc}"}), 500
 
-    # Build filename lookup keyed by (ticker, period, report_type)
-    filename_lookup: dict = {}
-    for row in (pdf_resp.data or []):
-        key = (row["ticker"], row.get("period", ""), row.get("report_type", ""))
-        filename_lookup[key] = row.get("filename")
-
-    rows = cache_resp.data or []
-
-    # Group by ticker, preserving alphabetical order
-    ticker_map: dict = {}
-    for row in rows:
+    # Build analysed set and latest generated_at per company
+    analysed_set: set = set()
+    analysed_dates: dict = {}
+    for row in (cache_resp.data or []):
         t = row["ticker"]
-        period      = row.get("period")      or ""
-        report_type = row.get("report_type") or ""
-        key         = (t, period, report_type)
-        if t not in ticker_map:
-            ticker_map[t] = []
-        ticker_map[t].append({
-            "period":      period,
-            "report_type": report_type,
-            "filename":    filename_lookup.get(key),
-            "created_at":  row.get("generated_at") or "",
+        analysed_set.add(t)
+        g = row.get("generated_at") or ""
+        if t not in analysed_dates or g > analysed_dates[t]:
+            analysed_dates[t] = g
+
+    # Group PDFs by company_name (ticker column)
+    company_map: dict = {}
+    for row in (pdf_resp.data or []):
+        name = row["ticker"]
+        if name not in company_map:
+            company_map[name] = []
+        company_map[name].append({
+            "period":      row.get("period") or "",
+            "report_type": row.get("report_type") or "",
+            "filename":    row.get("filename") or "",
+            "uploaded_at": row.get("uploaded_at") or "",
         })
 
-    tickers = [
-        {"ticker": t, "reports": reports}
-        for t, reports in sorted(ticker_map.items())
+    # Also include companies that are in cache but not in pdf_store
+    for name in analysed_set:
+        if name not in company_map:
+            company_map[name] = []
+
+    companies = [
+        {
+            "company_name": name,
+            "analysed":     name in analysed_set,
+            "last_updated": analysed_dates.get(name, ""),
+            "reports":      reports,
+        }
+        for name, reports in sorted(company_map.items())
     ]
 
-    return jsonify({"tickers": tickers})
+    return jsonify({"companies": companies})

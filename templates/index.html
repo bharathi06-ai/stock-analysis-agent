@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>StockDesk by Siva</title>
+  <title>StockDesk</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -12,297 +12,152 @@
 </head>
 <body>
 
-<!-- ═══════════════════════ UTILITY BAR ═══════════════════════ -->
-<div class="utility-bar">
-  <div class="utility-inner">
-    <span class="util-welcome">Welcome, <strong>Siva</strong></span>
-    <div class="util-right">
-      <span class="util-date" id="util-date-display">Last updated —</span>
-      <button class="util-logout" onclick="void(0)">Log out</button>
-    </div>
-  </div>
-</div>
+<!-- ════════════════════════════════════════
+     NAVIGATION
+════════════════════════════════════════ -->
+<header class="sd-nav">
+  <div class="sd-nav-inner">
 
-<!-- ═══════════════════════ MAIN NAV ═══════════════════════ -->
-<header class="main-nav">
-  <div class="nav-inner">
-    <div class="nav-brand">
-      <svg class="nav-logo-sq" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" aria-hidden="true">
+    <div class="sd-brand">
+      <svg class="sd-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" aria-hidden="true">
         <rect width="32" height="32" fill="#db0011"/>
         <rect x="5"  y="5"  width="9" height="9" fill="#fff"/>
         <rect x="18" y="5"  width="9" height="9" fill="#fff"/>
         <rect x="5"  y="18" width="9" height="9" fill="#fff"/>
         <rect x="18" y="18" width="9" height="9" fill="#fff"/>
       </svg>
-      <span class="nav-brand-text">
-        <span class="nav-brand-bold">StockDesk</span><span class="nav-brand-light"> by Siva</span>
-      </span>
+      <span class="sd-brand-name">StockDesk</span>
     </div>
-    <nav class="nav-links">
-      <button class="top-nav-btn" data-view="view-desk" onclick="switchView('view-desk')">
-        <span class="nl-label">My Stock Desk</span>
-        <span class="nl-sub">Analysed companies</span>
-      </button>
-      <button class="top-nav-btn" data-view="view-upload" onclick="switchView('view-upload')">
-        <span class="nl-label">Upload &amp; Reports</span>
-        <span class="nl-sub">Manage PDF reports</span>
-      </button>
+
+    <nav class="sd-nav-links" aria-label="Main navigation">
+      <a class="sd-nav-link sd-nav-link--active" href="#">Upload</a>
+      <a class="sd-nav-link" href="#">Companies</a>
     </nav>
+
   </div>
 </header>
 
-<!-- ═══════════════════════ VIEW: MY STOCK DESK ═══════════════════════ -->
-<div id="view-desk" class="view-panel hidden">
 
-  <!-- Empty state -->
-  <div id="desk-empty" class="desk-empty">
-    No analysed companies yet.
-    <a href="#" onclick="switchView('view-upload');return false;">Go to Upload &amp; Reports</a>
-    to get started.
-  </div>
+<!-- ════════════════════════════════════════
+     SCREEN 1 — UPLOAD
+════════════════════════════════════════ -->
+<main class="sd-main">
 
-  <!-- Main content (hidden until a company is loaded) -->
-  <div id="desk-content" class="hidden">
+  <!-- ── Section 1 : Upload form ───────────────────────── -->
+  <section class="sd-card" aria-label="Upload report">
 
-    <!-- Hero section -->
-    <div class="desk-hero">
-      <div class="desk-hero-inner">
-        <div class="hero-left">
-          <div class="company-eyebrow">Swedish Equity Research</div>
-          <div id="company-name" class="company-name">—</div>
-          <div id="company-meta" class="company-meta">—</div>
-        </div>
-        <div class="desk-hero-right">
-          <span class="desk-switch-label">Switch company</span>
-          <select id="desk-company-select" class="desk-company-select"
-                  onchange="onDeskCompanyChange(this.value)"></select>
-        </div>
+    <div class="sd-card-head">
+      <h1 class="sd-card-title">Upload Report</h1>
+      <p class="sd-card-sub">Add an annual or quarterly financial report. PDF text is extracted in your browser — no file content is stored on the server.</p>
+    </div>
+
+    <form id="upload-form" class="sd-form" novalidate>
+
+      <!-- Company name -->
+      <div class="sd-field">
+        <label class="sd-label" for="inp-company">Company Name</label>
+        <input class="sd-input" type="text" id="inp-company" name="company_name"
+               placeholder="e.g. HSBC Holdings" autocomplete="off" spellcheck="false">
       </div>
-    </div>
 
-    <!-- Status bar (shown during load / analyse) -->
-    <div id="status-bar" class="status-bar hidden">
-      <div class="status-inner">
-        <span id="status-icon" class="status-icon">⏳</span>
-        <div class="status-body">
-          <div class="status-row">
-            <span id="status-text">Loading…</span>
-            <span id="status-step" class="status-step"></span>
-          </div>
-          <div id="status-track" class="status-track hidden">
-            <div id="status-fill" class="status-fill"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Dashboard -->
-    <main id="dashboard" class="dashboard">
-
-      <!-- Metrics strip -->
-      <div id="metric-pills" class="metric-pills"></div>
-
-      <!-- Tab bar -->
-      <nav class="tab-bar">
-        <button class="tab-btn active" data-tab="summary">Summary</button>
-        <button class="tab-btn" data-tab="income">Income Statement</button>
-        <button class="tab-btn" data-tab="bs">Balance Sheet</button>
-        <button class="tab-btn" data-tab="cf">Cash Flow</button>
-        <button class="tab-btn" data-tab="ratios">Ratios</button>
-        <button class="tab-btn" data-tab="yoy">Year on Year</button>
-        <button class="tab-btn" data-tab="qoq">QoQ</button>
-      </nav>
-
-      <!-- Tab panels -->
-      <div class="tab-panels">
-
-        <!-- 1. SUMMARY -->
-        <section id="tab-summary" class="tab-panel active">
-          <div id="summary-highlights"></div>
-          <div class="two-col">
-            <div>
-              <h3 class="section-heading">About the Company</h3>
-              <p id="company-desc" class="body-text"></p>
-              <div class="info-grid" id="company-info-grid"></div>
-            </div>
-            <div>
-              <h3 class="section-heading">Investment Recommendation</h3>
-              <div id="rec-card" class="rec-card"></div>
-              <h3 class="section-heading" style="margin-top:24px">Key Risks</h3>
-              <ul id="risks-list" class="bullet-list risk"></ul>
-              <h3 class="section-heading" style="margin-top:20px">Opportunities</h3>
-              <ul id="opps-list" class="bullet-list opp"></ul>
-            </div>
-          </div>
-        </section>
-
-        <!-- 2. INCOME STATEMENT -->
-        <section id="tab-income" class="tab-panel">
-          <h3 class="section-heading">Income Statement</h3>
-          <div id="income-source-chip" class="tab-source-chip"></div>
-          <div id="income-table-wrap"></div>
-        </section>
-
-        <!-- 3. BALANCE SHEET -->
-        <section id="tab-bs" class="tab-panel">
-          <h3 class="section-heading">Balance Sheet</h3>
-          <div id="bs-source-chip" class="tab-source-chip"></div>
-          <div id="bs-table-wrap"></div>
-        </section>
-
-        <!-- 4. CASH FLOW -->
-        <section id="tab-cf" class="tab-panel">
-          <h3 class="section-heading">Cash Flow Statement</h3>
-          <div id="cf-source-chip" class="tab-source-chip"></div>
-          <div id="cf-table-wrap"></div>
-        </section>
-
-        <!-- 5. RATIOS & KEY FIGURES -->
-        <section id="tab-ratios" class="tab-panel">
-          <h3 class="section-heading">Ratios &amp; Key Figures</h3>
-          <div id="ratios-wrap" class="ratios-two-col"></div>
-        </section>
-
-        <!-- 6. YOY ANALYSIS -->
-        <section id="tab-yoy" class="tab-panel">
-          <h3 class="section-heading">Year-on-Year Analysis</h3>
-          <div id="yoy-table-wrap"></div>
-        </section>
-
-        <!-- 7. QOQ ANALYSIS -->
-        <section id="tab-qoq" class="tab-panel">
-          <h3 class="section-heading">Quarter-on-Quarter Analysis</h3>
-          <div id="qoq-source-chip" class="tab-source-chip"></div>
-          <div id="qoq-table-wrap"></div>
-        </section>
-
-      </div><!-- /tab-panels -->
-
-      <div id="last-updated" class="last-updated"></div>
-    </main>
-
-  </div><!-- /desk-content -->
-
-</div><!-- /view-desk -->
-
-<!-- ═══════════════════════ VIEW: UPLOAD & REPORTS ═══════════════════════ -->
-<div id="view-upload" class="view-panel hidden">
-
-  <!-- Black hero bar -->
-  <div class="upload-view-hero">
-    <div class="upload-view-hero-inner">
-      <div class="upload-view-title">Upload &amp; Reports</div>
-      <div class="upload-view-sub">Add annual and quarterly PDFs. Analyse when you are ready.</div>
-    </div>
-  </div>
-
-  <div class="upload-view-body">
-
-    <!-- Upload form box -->
-    <div class="upload-form-box">
-      <h3 class="section-heading">Add Report</h3>
-
-      <div class="up-form-row">
-        <label class="fb-label">Company</label>
-        <select id="up-company-select" class="up-sel up-company-sel"
-                onchange="onUpCompanyChange(this.value)">
-          <option value="" disabled selected>Select company…</option>
+      <!-- Sector -->
+      <div class="sd-field">
+        <label class="sd-label" for="inp-sector">Sector</label>
+        <select class="sd-select" id="inp-sector" name="sector">
+          <option value="" disabled selected>Select sector…</option>
+          <option value="Banks">Banks</option>
+          <option value="Insurance">Insurance</option>
+          <option value="Real Estate">Real Estate</option>
+          <option value="Industrials">Industrials</option>
+          <option value="Technology">Technology</option>
+          <option value="Healthcare">Healthcare</option>
+          <option value="Energy">Energy</option>
+          <option value="Other">Other</option>
         </select>
-        <input id="up-new-company" type="text"
-               class="fb-input up-new-company-input hidden"
-               placeholder="Enter new company name…"
-               autocomplete="off" spellcheck="false">
       </div>
 
-      <div class="up-form-inline">
-        <div class="up-form-row">
-          <label class="fb-label">Year</label>
-          <select id="up-year" class="up-sel">
-            <option value="2025">2025</option>
-            <option value="2024">2024</option>
-            <option value="2023">2023</option>
-            <option value="2022">2022</option>
-            <option value="2021">2021</option>
-            <option value="2020">2020</option>
-          </select>
+      <!-- File type radios -->
+      <div class="sd-field">
+        <span class="sd-label">File Type</span>
+        <div class="sd-radios">
+          <label class="sd-radio">
+            <input type="radio" name="file_type" value="excel" id="ft-excel" checked>
+            <span class="sd-radio-pip"></span>
+            <span class="sd-radio-lbl">Excel</span>
+          </label>
+          <label class="sd-radio">
+            <input type="radio" name="file_type" value="pdf" id="ft-pdf">
+            <span class="sd-radio-pip"></span>
+            <span class="sd-radio-lbl">PDF</span>
+          </label>
         </div>
-        <div class="up-form-row">
-          <label class="fb-label">Period</label>
-          <select id="up-period-type" class="up-sel">
-            <option value="Annual">Annual</option>
+      </div>
+
+      <!-- Period type + Year -->
+      <div class="sd-field sd-field--inline">
+        <div class="sd-field-unit">
+          <label class="sd-label" for="inp-period">Period Type</label>
+          <select class="sd-select" id="inp-period" name="period_type">
+            <option value="annual">Annual</option>
             <option value="Q1">Q1</option>
             <option value="Q2">Q2</option>
             <option value="Q3">Q3</option>
             <option value="Q4">Q4</option>
           </select>
         </div>
-      </div>
-
-      <div class="up-form-row">
-        <label class="fb-label">PDF File</label>
-        <div style="display:flex;align-items:center;gap:10px">
-          <button type="button" class="up-add-btn"
-                  onclick="document.getElementById('up-file-input').click()"
-                  style="margin-bottom:0;width:auto;padding:7px 14px">
-            Choose PDF…
-          </button>
-          <span id="up-file-name-label" class="up-file-name-lbl"></span>
+        <div class="sd-field-unit">
+          <label class="sd-label" for="inp-year">Year</label>
+          <input class="sd-input sd-input--year" type="number" id="inp-year"
+                 min="2000" max="2099" step="1">
         </div>
-        <input type="file" id="up-file-input" accept=".pdf" style="display:none">
       </div>
 
-      <div id="up-error" class="up-error hidden"></div>
-
-      <div id="up-progress" class="up-progress hidden">
-        <div id="up-progress-text" class="up-progress-text"></div>
-        <div class="up-progress-bar"><div id="up-progress-fill" class="up-progress-fill"></div></div>
+      <!-- File picker -->
+      <div class="sd-field">
+        <label class="sd-label">File</label>
+        <div class="sd-file-row">
+          <button type="button" class="sd-btn-file" id="file-btn"
+                  onclick="document.getElementById('file-input').click()">
+            Choose file…
+          </button>
+          <span class="sd-file-chosen" id="file-chosen">No file chosen</span>
+        </div>
+        <input type="file" id="file-input" accept=".xlsx,.xls" style="display:none">
       </div>
 
-      <button type="button" class="fb-submit" id="up-submit-btn"
-              onclick="submitUpload()">Upload</button>
+      <!-- Progress / spinner -->
+      <div id="upload-status" class="sd-status hidden" role="status" aria-live="polite">
+        <div class="sd-spinner" aria-hidden="true"></div>
+        <span id="upload-status-msg" class="sd-status-msg"></span>
+      </div>
 
-      <div id="up-success" class="fb-success hidden"></div>
-    </div><!-- /upload-form-box -->
+      <!-- Feedback messages -->
+      <div id="upload-success" class="sd-msg-ok  hidden" role="alert"></div>
+      <div id="upload-error"   class="sd-msg-err hidden" role="alert"></div>
 
-    <!-- Company cards -->
-    <div class="co-cards-section">
-      <h3 class="section-heading">Companies</h3>
-      <div id="company-cards"></div>
-    </div>
+      <!-- Submit -->
+      <div class="sd-field sd-field--submit">
+        <button type="submit" class="sd-btn-primary" id="upload-btn">Upload</button>
+      </div>
 
-  </div><!-- /upload-view-body -->
-
-</div><!-- /view-upload -->
-
-<!-- ═══════════════════════ FEEDBACK ═══════════════════════ -->
-<button id="feedback-btn" class="feedback-fab" onclick="openFeedback()">Feedback</button>
-
-<div id="feedback-overlay" class="fb-overlay hidden" onclick="closeFeedbackOnOverlay(event)">
-  <div class="fb-modal" role="dialog" aria-modal="true" aria-labelledby="fb-title">
-
-    <div class="fb-header">
-      <span id="fb-title" class="fb-title">Share Feedback</span>
-      <button class="fb-close" onclick="closeFeedback()" aria-label="Close">✕</button>
-    </div>
-
-    <form id="feedback-form" novalidate>
-      <label class="fb-label" for="fb-company">Company <span class="fb-optional">(optional)</span></label>
-      <input id="fb-company" class="fb-input" type="text"
-             placeholder="e.g. SEB, Handelsbanken" autocomplete="off" spellcheck="false">
-
-      <label class="fb-label" for="fb-message">Message</label>
-      <textarea id="fb-message" class="fb-textarea" rows="4"
-                placeholder="What's working well? What could be better?" required></textarea>
-
-      <button type="submit" class="fb-submit" id="fb-submit-btn">Send feedback</button>
     </form>
+  </section>
 
-    <div id="fb-success" class="fb-success hidden">
-      Thanks! Got your feedback.
+
+  <!-- ── Section 2 : Reports table ─────────────────────── -->
+  <section class="sd-card" aria-label="Uploaded reports">
+
+    <div class="sd-card-head">
+      <h2 class="sd-card-title">Uploaded Reports</h2>
     </div>
 
-  </div>
-</div>
+    <div id="reports-wrap" class="sd-reports-wrap">
+      <p class="sd-state-text">Loading…</p>
+    </div>
+
+  </section>
+
+</main>
 
 <script src="/static/js/main.js"></script>
 </body>
