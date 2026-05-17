@@ -6,7 +6,7 @@ import os
 import queue
 import re
 import threading
-from flask import Flask, render_template, request, jsonify, Response, stream_with_context, session, redirect, url_for
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,38 +16,9 @@ app = Flask(__name__,
     template_folder=os.path.join(_root, 'templates'),
     static_folder=os.path.join(_root, 'static')
 )
-app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
 # Company name: letters, digits, spaces, hyphens, periods, ampersands — max 80 chars
 COMPANY_RE = re.compile(r"^[A-Za-z0-9\s\-\.&,()]{1,80}$")
-
-
-@app.before_request
-def require_login():
-    if request.endpoint in ("login", "logout", "static"):
-        return
-    if not session.get("auth"):
-        return redirect(url_for("login", next=request.path))
-
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    error = None
-    if request.method == "POST":
-        password = request.form.get("password", "")
-        expected = os.environ.get("LOGIN_PASSWORD", "")
-        if password == expected:
-            session["auth"] = True
-            next_url = request.args.get("next") or url_for("index")
-            return redirect(next_url)
-        error = "Incorrect password"
-    return render_template("login.html", error=error)
-
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
 
 
 @app.route("/")
